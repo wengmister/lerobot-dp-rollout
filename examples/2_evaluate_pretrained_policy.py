@@ -67,7 +67,7 @@ print(env.action_space)
 
 # Reset the policy and environments to prepare for rollout
 policy.reset()
-numpy_observation, info = env.reset(seed=42)
+numpy_observation, info = env.reset(seed=0)
 
 # Prepare to collect every rewards and all the frames of the episode,
 # from initial state to final state.

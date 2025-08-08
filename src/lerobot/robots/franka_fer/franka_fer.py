@@ -1,88 +1,190 @@
-import numpy as np
-from typing import Dict
-from src.lerobot.motors.franka_fer.franky_client import FrankyClient
+import logging
+import time
+from functools import cached_property
+from typing import Any
 
-class FrankaRobotLeRobot:
-    """Robot abstraction for LeRobot framework"""
+import numpy as np
+
+from lerobot.cameras.utils import make_cameras_from_configs
+from lerobot.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+
+from ..robot import Robot
+from ..utils import ensure_safe_goal_position
+from ...motors.franka_fer.franky_client import FrankyClient
+from .franka_fer_config import FrankaFERConfig
+
+logger = logging.getLogger(__name__)
+
+
+class FrankaFER(Robot):
+    """
+    Franka FER robot controlled via Franky client/server architecture.
     
-    def __init__(self, server_ip: str, server_port: int = 5000, dynamics_factor: float = 0.3):
-        """
-        Initialize Franka robot for LeRobot
+    This robot implementation communicates with a Franky server running on a real-time
+    computer to control a Franka Emika robot.
+    """
+    
+    config_class = FrankaFERConfig
+    name = "franka_fer"
+    
+    def __init__(self, config: FrankaFERConfig):
+        super().__init__(config)
+        self.config = config
+        self.client = FrankyClient(config.server_ip, config.server_port)
+        self.cameras = make_cameras_from_configs(config.cameras)
+        self._is_connected = False
         
-        Args:
-            server_ip: IP address of the RT PC
-            server_port: Port of the franky server
-            dynamics_factor: Speed factor (0.0-1.0)
-        """
-        self.client = FrankyClient(server_ip, server_port)
-        self.dynamics_factor = dynamics_factor
-        self.motors = []
-        self.is_connected = False
+    @cached_property
+    def observation_features(self) -> dict[str, type | tuple]:
+        """Define observation feature structure"""
+        features = {}
         
-    def connect(self) -> bool:
-        """Initialize connection to robot"""
+        # Joint positions (7 joints)
+        for i in range(7):
+            features[f"joint_{i}.pos"] = float
+            
+        # Add camera features if any
+        for cam_name, cam_config in self.config.cameras.items():
+            features[cam_name] = (cam_config.height, cam_config.width, 3)
+            
+        return features
+    
+    @cached_property 
+    def action_features(self) -> dict[str, type]:
+        """Define action feature structure"""
+        return {f"joint_{i}.pos": float for i in range(7)}
+    
+    @property
+    def is_connected(self) -> bool:
+        """Check if robot is connected"""
+        return self._is_connected and self.client.is_connected
+    
+    def connect(self, calibrate: bool = True) -> None:
+        """Connect to the robot"""
+        if self.is_connected:
+            raise DeviceAlreadyConnectedError(f"{self} already connected")
+        
         # Check server health first
         if not self.client.health_check():
-            print(f"Cannot reach franky server at {self.client.base_url}")
+            raise ConnectionError(f"Cannot reach franky server at {self.client.base_url}")
+        
+        # Connect to robot
+        if not self.client.connect(self.config.dynamics_factor):
+            raise ConnectionError("Failed to connect to Franka robot")
+        
+        self._is_connected = True
+        
+        # Connect cameras if any
+        for cam in self.cameras.values():
+            cam.connect()
+        
+        # Configure robot
+        self.configure()
+        
+        logger.info(f"{self} connected with dynamics factor {self.config.dynamics_factor}")
+    
+    @property
+    def is_calibrated(self) -> bool:
+        """Franka robots don't require calibration in this implementation"""
+        return True
+    
+    def calibrate(self) -> None:
+        """No-op for Franka robots - they are pre-calibrated"""
+        pass
+    
+    def configure(self) -> None:
+        """Configure robot with current settings"""
+        if not self.is_connected:
+            raise DeviceNotConnectedError(f"{self} is not connected")
+        
+        # Apply dynamics factor and any other configuration
+        self.client.configure(dynamics_factor=self.config.dynamics_factor)
+    
+    def get_observation(self) -> dict[str, Any]:
+        """Get current robot observation"""
+        if not self.is_connected:
+            raise DeviceNotConnectedError(f"{self} is not connected")
+        
+        obs_dict = {}
+        
+        # Get joint positions
+        start = time.perf_counter()
+        positions = self.client.get_joint_positions()
+        if positions is not None:
+            for i, pos in enumerate(positions):
+                obs_dict[f"joint_{i}.pos"] = float(pos)
+        dt_ms = (time.perf_counter() - start) * 1e3
+        logger.debug(f"{self} read joint positions: {dt_ms:.1f}ms")
+        
+        # Capture images from cameras
+        for cam_key, cam in self.cameras.items():
+            start = time.perf_counter()
+            obs_dict[cam_key] = cam.async_read()
+            dt_ms = (time.perf_counter() - start) * 1e3
+            logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
+        
+        return obs_dict
+    
+    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
+        """Send action to robot"""
+        if not self.is_connected:
+            raise DeviceNotConnectedError(f"{self} is not connected")
+        
+        # Extract joint positions from action dict
+        joint_positions = []
+        for i in range(7):
+            key = f"joint_{i}.pos"
+            if key not in action:
+                raise ValueError(f"Missing joint position for {key}")
+            joint_positions.append(action[key])
+        
+        target_positions = np.array(joint_positions)
+        
+        # Apply safety limits if configured
+        if self.config.max_relative_target is not None:
+            current_positions = self.client.get_joint_positions()
+            if current_positions is not None:
+                # Create goal_present_pos dict for safety function
+                goal_present_pos = {}
+                for i in range(7):
+                    goal_present_pos[f"joint_{i}"] = (target_positions[i], current_positions[i])
+                
+                # Apply safety limits
+                safe_positions = ensure_safe_goal_position(goal_present_pos, self.config.max_relative_target)
+                target_positions = np.array([safe_positions[f"joint_{i}"] for i in range(7)])
+        
+        # Send command to robot
+        success = self.client.move_joints(target_positions)
+        if not success:
+            logger.warning("Failed to send action to robot")
+        
+        # Return the actual action sent
+        return {f"joint_{i}.pos": float(target_positions[i]) for i in range(7)}
+    
+    def disconnect(self) -> None:
+        """Disconnect from robot"""
+        if not self.is_connected:
+            raise DeviceNotConnectedError(f"{self} is not connected")
+        
+        # Disconnect from robot
+        self.client.disconnect()
+        self._is_connected = False
+        
+        # Disconnect cameras
+        for cam in self.cameras.values():
+            cam.disconnect()
+        
+        logger.info(f"{self} disconnected")
+    
+    def reset_to_home(self) -> bool:
+        """Reset robot to home position"""
+        if not self.is_connected:
             return False
         
-        self.is_connected = self.client.connect(self.dynamics_factor)
-        
-        if self.is_connected:
-            # Create motor abstractions for each joint
-            self.motors = [
-                FrankaMotorLeRobot(self.client, i) for i in range(7)
-            ]
-            print(f"Connected to Franka robot with dynamics factor {self.dynamics_factor}")
-        
-        return self.is_connected
-    
-    def disconnect(self):
-        """Disconnect from robot"""
-        self.client.disconnect()
-        self.is_connected = False
-        self.motors = []
-    
-    def get_observation(self) -> Dict:
-        """Get current robot observation for LeRobot"""
-        state = self.client.get_state()
-        
-        if state:
-            return {
-                "joint_positions": np.array(state["q"]),
-                "joint_velocities": np.array(state["dq"]),
-                "joint_torques": np.array(state["tau_J"]),
-                "ee_pose": np.array(state["O_T_EE"]).reshape(4, 4),
-                "timestamp": state["time"]
-            }
-        
-        return {}
-    
-    def send_action(self, action: np.ndarray, action_type: str = "position", **kwargs):
-        """
-        Send action to robot
-        
-        Args:
-            action: Joint values (7 elements)
-            action_type: "position" or "velocity"
-            kwargs: Additional parameters (e.g., duration_ms for velocity)
-        """
-        if action_type == "position":
-            return self.client.move_joints(action)
-        elif action_type == "velocity":
-            duration_ms = kwargs.get("duration_ms", 100)
-            return self.client.move_joint_velocity(action, duration_ms)
-        else:
-            raise ValueError(f"Unknown action type: {action_type}")
-    
-    def reset(self, home_position: np.ndarray = None) -> bool:
-        """Reset robot to home position"""
-        if home_position is None:
-            # Default Franka home position
-            home_position = np.array([0, -0.785, 0, -2.356, 0, 1.571, 0.785])
+        home_position = np.array(self.config.home_position)
         
         # Slow down for reset motion
-        original_factor = self.dynamics_factor
+        original_factor = self.config.dynamics_factor
         self.client.configure(dynamics_factor=0.2)
         
         success = self.client.move_joints(home_position)
@@ -94,47 +196,12 @@ class FrankaRobotLeRobot:
     
     def stop(self) -> bool:
         """Emergency stop"""
+        if not self.is_connected:
+            return False
         return self.client.stop()
     
-    def configure(self, dynamics_factor: float = None, **kwargs):
-        """Update robot configuration"""
-        if dynamics_factor is not None:
-            self.dynamics_factor = dynamics_factor
-        return self.client.configure(dynamics_factor=dynamics_factor, **kwargs)
-    
-# LeRobot Integration Classes
-class FrankaMotorLeRobot:
-    """Motor abstraction for LeRobot framework"""
-    
-    def __init__(self, client: FrankyClient, joint_index: int):
-        self.client = client
-        self.joint_index = joint_index
-    
-    @property
-    def position(self) -> float:
-        """Get current position of this joint"""
-        positions = self.client.get_joint_positions()
-        if positions is not None:
-            return positions[self.joint_index]
-        return 0.0
-    
-    @property
-    def velocity(self) -> float:
-        """Get current velocity of this joint"""
-        velocities = self.client.get_joint_velocities()
-        if velocities is not None:
-            return velocities[self.joint_index]
-        return 0.0
-    
-    def set_position(self, position: float):
-        """Set target position for this joint"""
-        current_positions = self.client.get_joint_positions()
-        if current_positions is not None:
-            current_positions[self.joint_index] = position
-            self.client.move_joints(current_positions)
-    
-    def set_velocity(self, velocity: float, duration_ms: int = 100):
-        """Set velocity for this joint"""
-        velocities = np.zeros(7)
-        velocities[self.joint_index] = velocity
-        self.client.move_joint_velocity(velocities, duration_ms)
+    def recover_from_errors(self) -> bool:
+        """Recover from robot errors"""
+        if not self.is_connected:
+            return False
+        return self.client.recover_from_errors()

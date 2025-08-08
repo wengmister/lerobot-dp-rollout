@@ -34,7 +34,7 @@ class FrankyClient:
         except requests.exceptions.RequestException as e:
             return {"success": False, "error": str(e)}
     
-    def connect(self, dynamics_factor: float = 0.3) -> bool:
+    def connect(self, dynamics_factor: float = 0.2) -> bool:
         """Connect to franky server and initialize robot"""
         response = self._request("POST", "connect", {
             "dynamics_factor": dynamics_factor
@@ -138,6 +138,8 @@ if __name__ == "__main__":
         print("Moving joints...")
         client.move_joints(target)
         
+        full_state = client.get_state()
+        print(f"Full state: {full_state}")
         # Test joint velocity motion
         print("Testing velocity control...")
         velocities = np.array([-0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
