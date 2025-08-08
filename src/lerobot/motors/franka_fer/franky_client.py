@@ -280,9 +280,12 @@ if __name__ == "__main__":
         
         # Test joint velocity motion
         print("Testing velocity control...")
-        velocities = np.array([0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        velocities = np.array([-0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         client.move_joint_velocity(velocities, duration_ms=1000)  # 1 second
-        
+
+        robot_velocities = client.get_joint_velocities()
+        print("Current velocities:", robot_velocities)
+
         client.disconnect()
     
     print("\n" + "="*50 + "\n")
