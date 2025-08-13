@@ -7,7 +7,7 @@ import time
 import numpy as np
 import argparse
 
-class FrankaVelocityClient:
+class FrankaRobotClient:
     def __init__(self, server_ip="192.168.18.1", server_port=5000):
         self.server_ip = server_ip
         self.server_port = server_port
@@ -15,12 +15,12 @@ class FrankaVelocityClient:
         self.connected = False
     
     def connect(self):
-        """Connect to velocity server"""
+        """Connect to robot server"""
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.server_ip, self.server_port))
             self.connected = True
-            print(f"Connected to velocity server at {self.server_ip}:{self.server_port}")
+            print(f"Connected to robot server at {self.server_ip}:{self.server_port}")
             return True
         except Exception as e:
             print(f"Failed to connect: {e}")
@@ -35,13 +35,13 @@ class FrankaVelocityClient:
             except:
                 pass
             self.connected = False
-            print("Disconnected from server")
-    
+            print("Disconnected from robot server")
+
     def _send_command(self, command):
         """Send command and get response"""
         if not self.connected:
-            raise RuntimeError("Not connected to server")
-        
+            raise RuntimeError("Not connected to robot server")
+
         try:
             self.socket.send((command + "\n").encode())
             response = self.socket.recv(1024).decode().strip()
@@ -166,7 +166,7 @@ def replay_csv_trajectory(client, csv_file, position_scale=1.0):
         print("Start position command sent successfully. Beginning trajectory replay...")
         print("Press Ctrl+C to stop")
 
-        time.sleep(5)  # Give server time to move to start position
+        time.sleep(3)  # Give server time to move to start position
 
         start_time = time.time()
         
@@ -195,9 +195,9 @@ def replay_csv_trajectory(client, csv_file, position_scale=1.0):
         print(f"Error during trajectory replay: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description='Test Franka Velocity Server')
+    parser = argparse.ArgumentParser(description='Test Franka Robot Server')
     parser.add_argument('--server_ip', default='192.168.18.1',
-                       help='IP address of velocity server')
+                       help='IP address of robot server')
     parser.add_argument('--test', choices=['basic', 'zero', 'small', 'replay'],
                        default='basic', help='Test to run')
     parser.add_argument('--csv_file', help='CSV file for trajectory replay')
@@ -207,7 +207,7 @@ def main():
     args = parser.parse_args()
     
     # Create client and connect
-    client = FrankaVelocityClient(args.server_ip)
+    client = FrankaRobotClient(args.server_ip)
     
     if not client.connect():
         return

@@ -48,6 +48,7 @@ private:
     int client_socket_;
     std::atomic<bool> running_{true};
     std::atomic<bool> client_connected_{false};
+    std::atomic<bool> ready_for_clients_{true}; // Controls when network thread accepts connections
     const int PORT = 5000;
     
     // Position command state
@@ -135,6 +136,13 @@ private:
     
     void networkThread() {
         while (running_) {
+            // Wait until main thread is ready for new clients
+            while (running_ && !ready_for_clients_) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            
+            if (!running_) break;
+            
             std::cout << "Waiting for client connection..." << std::endl;
             
             struct sockaddr_in client_addr;
@@ -262,7 +270,6 @@ private:
                     // Use a special flag to indicate this is a move-to-start command
                     pending_start_position_ = start_positions;
                     has_pending_start_ = true;
-                    std::cout << "DEBUG: Set has_pending_start_ = true" << std::endl;
                 }
                 
                 sendResponse("OK");
@@ -557,12 +564,17 @@ public:
         
         std::cout << "Server ready. Waiting for client connection..." << std::endl;
         
-        // Wait for client to connect before starting control
-        while (running_ && !client_connected_) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-        
-        while (running_ && client_connected_) {
+        while (running_) {
+            // Wait for client to connect before starting control
+            std::cout << "Waiting for client connection before starting control..." << std::endl;
+            while (running_ && !client_connected_) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            
+            if (!running_) break;
+            
+            std::cout << "Client connection detected, proceeding..." << std::endl;
+            
             std::cout << "Client connected. Waiting for commands..." << std::endl;
             
             // Wait for potential MOVE_TO_START command or first position command
@@ -570,7 +582,6 @@ public:
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             
             // Check if we need to move to start position first
-            std::cout << "DEBUG: has_pending_start_ = " << has_pending_start_.load() << std::endl;
             if (has_pending_start_) {
                 std::cout << "Moving to start position first..." << std::endl;
                 try {
@@ -598,27 +609,34 @@ public:
                 std::cerr << "Control error: " << e.what() << std::endl;
             }
             
+            // Prevent network thread from accepting new connections during reconnection
+            ready_for_clients_ = false;
+            
             // After control ends, we need to reconnect to robot for next session
-            if (client_connected_) {
-                std::cout << "Reconnecting to robot for next session..." << std::endl;
-                
-                // Disconnect and reconnect robot
-                if (robot_) {
-                    delete robot_;
-                    robot_ = nullptr;
-                    robot_connected_ = false;
-                }
-                
-                // Wait a moment for robot to be ready
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                
-                // Reconnect
-                if (!connectRobot(robot_ip_)) {
-                    std::cerr << "Failed to reconnect to robot" << std::endl;
-                    running_ = false;
-                    break;
-                }
+            std::cout << "Reconnecting to robot for next session..." << std::endl;
+            
+            // Disconnect and reconnect robot
+            if (robot_) {
+                delete robot_;
+                robot_ = nullptr;
+                robot_connected_ = false;
             }
+            
+            // Wait a moment for robot to be ready
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            
+            // Reconnect
+            if (!connectRobot(robot_ip_)) {
+                std::cerr << "Failed to reconnect to robot" << std::endl;
+                running_ = false;
+                break;
+            }
+            
+            // Ensure client_connected_ is false before waiting for next client
+            client_connected_ = false;
+            
+            // Now ready to accept new clients
+            ready_for_clients_ = true;
         }
         
         running_ = false;
