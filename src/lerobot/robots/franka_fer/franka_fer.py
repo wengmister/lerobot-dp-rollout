@@ -228,17 +228,52 @@ class FrankaFER(Robot):
         logger.info(f"{self} disconnected")
     
     def reset_to_home(self) -> bool:
-        """Reset robot to home position"""
+        """Reset robot to home position using MOVE_TO_START"""
         if not self.is_connected:
             return False
         
         home_position = np.array(self.config.home_position)
         
-        # Send move to start command for safe reset
-        cmd = "MOVE_TO_START " + " ".join(f"{p:.6f}" for p in home_position)
-        response = self._send_command(cmd)
-        
-        return response == "OK"
+        try:
+            # Disconnect current session to allow MOVE_TO_START to execute
+            logger.info("Disconnecting to perform safe home movement...")
+            self.disconnect()
+            
+            # Brief pause to ensure clean disconnect
+            time.sleep(0.5)
+            
+            # Reconnect but don't start control loop yet
+            logger.info("Reconnecting for home movement...")
+            if not self._health_check():
+                raise ConnectionError(f"Cannot reach server at {self.server_ip}:{self.server_port}")
+            
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.connect((self.server_ip, self.server_port))
+            self._is_connected = True
+            
+            # Immediately send MOVE_TO_START before server starts velocity control
+            cmd = "MOVE_TO_START " + " ".join(f"{p:.6f}" for p in home_position)
+            response = self._send_command(cmd)
+            
+            # Now wait for the movement to complete and velocity control to start
+            time.sleep(3.0)  # Give time for the movement to execute
+            
+            if response == "OK":
+                logger.info("Home position command sent successfully")
+                return True
+            else:
+                logger.warning(f"Home position command failed: {response}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to reset to home: {e}")
+            # Try to reconnect if something went wrong
+            try:
+                if not self.is_connected:
+                    self.connect(calibrate=False)
+            except:
+                pass
+            return False
     
     def stop(self) -> bool:
         """Emergency stop"""

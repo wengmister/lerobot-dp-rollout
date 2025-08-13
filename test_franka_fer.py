@@ -16,7 +16,6 @@ def test_robot_instantiation():
         id="franka_test",
         server_ip="192.168.18.1",
         server_port=5000,
-        dynamics_factor=0.3
     )
     
     robot = FrankaFER(config)
@@ -36,32 +35,6 @@ def test_robot_instantiation():
     print(f"✓ Action features: {action_features}")
     
     return robot
-
-
-def test_robot_mock_connection():
-    """Test robot connection workflow (without actual connection)"""
-    print("\nTesting robot connection workflow...")
-    
-    config = FrankaFERConfig(
-        id="franka_test",
-        server_ip="127.0.0.1",  # Mock IP that won't connect
-        server_port=5000,
-        dynamics_factor=0.3
-    )
-    
-    robot = FrankaFER(config)
-    
-    print("✓ Robot created for connection test")
-    
-    # This should fail gracefully
-    try:
-        robot.connect(calibrate=False)
-        print("✓ Connected successfully") 
-    except Exception as e:
-        print(f"✗ Connection failed as expected: {e}")
-    
-    return robot
-
 
 def test_action_dict_structure():
     """Test action dictionary structure"""
@@ -112,6 +85,93 @@ def test_robot_factory():
         return None
 
 
+def test_home_pose_with_real_connection():
+    """Test connecting to real robot and going to home pose"""
+    print("\nTesting real robot connection and home pose...")
+    print("⚠️  Make sure your C++ position server is running!")
+    
+    config = FrankaFERConfig(
+        id="franka_home_test",
+        server_ip="192.168.18.1",  # Update this to your actual server IP
+        server_port=5000,
+    )
+    
+    robot = FrankaFER(config)
+    
+    try:
+        print("🔄 Attempting to connect to robot server...")
+        robot.connect(calibrate=False)
+        print("✓ Successfully connected to robot!")
+        
+        # Get current position
+        print("📍 Getting current robot state...")
+        current_obs = robot.get_observation()
+        current_positions = [current_obs[f"joint_{i}.pos"] for i in range(7)]
+        print(f"✓ Current joint positions: {[f'{p:.3f}' for p in current_positions]}")
+        
+        # Show home position
+        home_positions = config.home_position
+        print(f"🏠 Target home positions: {[f'{p:.3f}' for p in home_positions]}")
+        
+        # Ask user confirmation
+        user_input = input("\n🤖 Do you want to move the robot to home position? (y/N): ")
+        
+        if user_input.lower() in ['y', 'yes']:
+            print("🏠 Moving robot to home position...")
+            success = robot.reset_to_home()
+            
+            if success:
+                print("✓ Successfully moved to home position!")
+                
+                # Verify we reached home
+                import time
+                time.sleep(2)  # Wait for movement to complete
+                
+                new_obs = robot.get_observation()
+                new_positions = [new_obs[f"joint_{i}.pos"] for i in range(7)]
+                print(f"✓ New joint positions: {[f'{p:.3f}' for p in new_positions]}")
+                
+                # Check if we're close to home
+                errors = [abs(new - target) for new, target in zip(new_positions, home_positions)]
+                max_error = max(errors)
+                
+                if max_error < 0.05:  # 0.05 radian tolerance
+                    print(f"✓ Robot successfully reached home pose (max error: {max_error:.4f} rad)")
+                else:
+                    print(f"⚠️  Robot moved but not exactly at home (max error: {max_error:.4f} rad)")
+                    
+            else:
+                print("✗ Failed to move to home position")
+        else:
+            print("⏭️  Skipping home pose movement")
+            
+        # Test stop command
+        print("\n🛑 Testing stop command...")
+        stop_success = robot.stop()
+        print(f"✓ Stop command: {'SUCCESS' if stop_success else 'FAILED'}")
+        
+        return robot
+        
+    except ConnectionError as e:
+        print(f"✗ Connection failed: {e}")
+        print("💡 Make sure your C++ position server is running and reachable")
+        return None
+    except Exception as e:
+        print(f"✗ Test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+    finally:
+        # Always try to disconnect
+        try:
+            if robot.is_connected:
+                print("\n🔌 Disconnecting from robot...")
+                robot.disconnect()
+                print("✓ Disconnected successfully")
+        except Exception as e:
+            print(f"⚠️  Disconnect error: {e}")
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("Franka FER Robot Integration Test")
@@ -120,9 +180,16 @@ if __name__ == "__main__":
     try:
         # Test basic functionality
         robot1 = test_robot_instantiation()
-        robot2 = test_robot_mock_connection() 
         action = test_action_dict_structure()
         robot3 = test_robot_factory()
+        
+        # Test with real robot if user wants to
+        print("\n" + "=" * 60)
+        test_real = input("Do you want to test with the real robot? (y/N): ")
+        if test_real.lower() in ['y', 'yes']:
+            robot_real = test_home_pose_with_real_connection()
+        else:
+            print("⏭️  Skipping real robot test")
         
         print("\n" + "=" * 60)
         print("✓ All tests completed!")
