@@ -10,12 +10,9 @@ from ..config import RobotConfig
 @RobotConfig.register_subclass("franka_fer")
 @dataclass
 class FrankaFERConfig(RobotConfig):
-    # Server IP and port for Franky client
+    # Server IP and port for Franka Robot Server
     server_ip: str = "192.168.18.1"
     server_port: int = 5000
-    
-    # Dynamics factor for robot movement speed (0.0-1.0)
-    dynamics_factor: float = 0.3
 
     # Home position for robot reset
     home_position: list[float] = field(default_factory=lambda: [0, -0.785, 0, -2.356, 0, 1.571, 0.785])

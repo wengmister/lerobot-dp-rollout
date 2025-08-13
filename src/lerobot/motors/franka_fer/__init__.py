@@ -1,1 +1,1 @@
-from .franky_client import FrankyClient
+from .franka_client import FrankaRobotClient

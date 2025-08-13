@@ -1,7 +1,8 @@
 import logging
+import socket
 import time
 from functools import cached_property
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 
@@ -10,7 +11,6 @@ from lerobot.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 
 from ..robot import Robot
 from ..utils import ensure_safe_goal_position
-from ...motors.franka_fer.franky_client import FrankyClient
 from .franka_fer_config import FrankaFERConfig
 
 logger = logging.getLogger(__name__)
@@ -18,9 +18,9 @@ logger = logging.getLogger(__name__)
 
 class FrankaFER(Robot):
     """
-    Franka FER robot controlled via Franky client/server architecture.
+    Franka FER robot controlled via direct socket communication to C++ server.
     
-    This robot implementation communicates with a Franky server running on a real-time
+    This robot implementation communicates directly with a C++ position server running on a real-time
     computer to control a Franka Emika robot.
     """
     
@@ -30,7 +30,9 @@ class FrankaFER(Robot):
     def __init__(self, config: FrankaFERConfig):
         super().__init__(config)
         self.config = config
-        self.client = FrankyClient(config.server_ip, config.server_port)
+        self.server_ip = config.server_ip
+        self.server_port = config.server_port
+        self.socket = None
         self.cameras = make_cameras_from_configs(config.cameras)
         self._is_connected = False
         
@@ -54,10 +56,36 @@ class FrankaFER(Robot):
         """Define action feature structure"""
         return {f"joint_{i}.pos": float for i in range(7)}
     
+    def _send_command(self, command: str) -> Optional[str]:
+        """Send command to server and get response"""
+        if not self._is_connected or self.socket is None:
+            return None
+        
+        try:
+            self.socket.send((command + "\n").encode())
+            response = self.socket.recv(1024).decode().strip()
+            return response
+        except Exception as e:
+            logger.error(f"Communication error: {e}")
+            self._is_connected = False
+            return None
+    
+    def _health_check(self) -> bool:
+        """Check if server is reachable"""
+        try:
+            test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            test_socket.settimeout(2.0)
+            result = test_socket.connect_ex((self.server_ip, self.server_port))
+            test_socket.close()
+            return result == 0
+        except Exception as e:
+            logger.debug(f"Health check failed: {e}")
+            return False
+    
     @property
     def is_connected(self) -> bool:
         """Check if robot is connected"""
-        return self._is_connected and self.client.is_connected
+        return self._is_connected and self.socket is not None
     
     def connect(self, calibrate: bool = True) -> None:
         """Connect to the robot"""
@@ -65,14 +93,18 @@ class FrankaFER(Robot):
             raise DeviceAlreadyConnectedError(f"{self} already connected")
         
         # Check server health first
-        if not self.client.health_check():
-            raise ConnectionError(f"Cannot reach franky server at {self.client.base_url}")
+        if not self._health_check():
+            raise ConnectionError(f"Cannot reach server at {self.server_ip}:{self.server_port}")
         
-        # Connect to robot
-        if not self.client.connect(self.config.dynamics_factor):
-            raise ConnectionError("Failed to connect to Franka robot")
-        
-        self._is_connected = True
+        # Connect to server
+        try:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.connect((self.server_ip, self.server_port))
+            self._is_connected = True
+            logger.info(f"Connected to robot server at {self.server_ip}:{self.server_port}")
+        except Exception as e:
+            logger.error(f"Failed to connect: {e}")
+            raise ConnectionError("Failed to connect to Franka robot server")
         
         # Connect cameras if any
         for cam in self.cameras.values():
@@ -81,7 +113,7 @@ class FrankaFER(Robot):
         # Configure robot
         self.configure()
         
-        logger.info(f"{self} connected with dynamics factor {self.config.dynamics_factor}")
+        logger.info(f"{self} connected")
     
     @property
     def is_calibrated(self) -> bool:
@@ -97,8 +129,20 @@ class FrankaFER(Robot):
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected")
         
-        # Apply dynamics factor and any other configuration
-        self.client.configure(dynamics_factor=self.config.dynamics_factor)
+        # The C++ server applies dynamics factor when it connects to the robot
+        # No additional configuration needed here
+        pass
+    
+    def _get_joint_positions(self) -> Optional[np.ndarray]:
+        """Get current joint positions from server"""
+        response = self._send_command("GET_STATE")
+        if response and response.startswith("STATE"):
+            # Parse: STATE pos0 pos1 ... pos6 vel0 vel1 ... vel6
+            parts = response.split()[1:]  # Skip "STATE"
+            if len(parts) >= 14:
+                positions = [float(x) for x in parts[:7]]
+                return np.array(positions)
+        return None
     
     def get_observation(self) -> dict[str, Any]:
         """Get current robot observation"""
@@ -109,7 +153,7 @@ class FrankaFER(Robot):
         
         # Get joint positions
         start = time.perf_counter()
-        positions = self.client.get_joint_positions()
+        positions = self._get_joint_positions()
         if positions is not None:
             for i, pos in enumerate(positions):
                 obs_dict[f"joint_{i}.pos"] = float(pos)
@@ -142,7 +186,7 @@ class FrankaFER(Robot):
         
         # Apply safety limits if configured
         if self.config.max_relative_target is not None:
-            current_positions = self.client.get_joint_positions()
+            current_positions = self._get_joint_positions()
             if current_positions is not None:
                 # Create goal_present_pos dict for safety function
                 goal_present_pos = {}
@@ -154,8 +198,9 @@ class FrankaFER(Robot):
                 target_positions = np.array([safe_positions[f"joint_{i}"] for i in range(7)])
         
         # Send command to robot
-        success = self.client.move_joints(target_positions)
-        if not success:
+        cmd = "SET_POSITION " + " ".join(f"{p:.6f}" for p in target_positions)
+        response = self._send_command(cmd)
+        if response != "OK":
             logger.warning("Failed to send action to robot")
         
         # Return the actual action sent
@@ -166,8 +211,14 @@ class FrankaFER(Robot):
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected")
         
-        # Disconnect from robot
-        self.client.disconnect()
+        # Send disconnect command and close socket
+        try:
+            self._send_command("DISCONNECT")
+            self.socket.close()
+        except:
+            pass
+        
+        self.socket = None
         self._is_connected = False
         
         # Disconnect cameras
@@ -183,25 +234,25 @@ class FrankaFER(Robot):
         
         home_position = np.array(self.config.home_position)
         
-        # Slow down for reset motion
-        original_factor = self.config.dynamics_factor
-        self.client.configure(dynamics_factor=0.2)
+        # Send move to start command for safe reset
+        cmd = "MOVE_TO_START " + " ".join(f"{p:.6f}" for p in home_position)
+        response = self._send_command(cmd)
         
-        success = self.client.move_joints(home_position)
-        
-        # Restore original dynamics
-        self.client.configure(dynamics_factor=original_factor)
-        
-        return success
+        return response == "OK"
     
     def stop(self) -> bool:
         """Emergency stop"""
         if not self.is_connected:
             return False
-        return self.client.stop()
+        response = self._send_command("STOP")
+        return response == "OK"
     
     def recover_from_errors(self) -> bool:
         """Recover from robot errors"""
         if not self.is_connected:
             return False
-        return self.client.recover_from_errors()
+        # For now, just try to stop and then check if we can get state
+        if self.stop():
+            state = self._get_joint_positions()
+            return state is not None
+        return False
