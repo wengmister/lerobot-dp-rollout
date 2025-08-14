@@ -80,6 +80,7 @@ from lerobot.robots import (  # noqa: F401
     Robot,
     RobotConfig,
     bi_so100_follower,
+    franka_fer,
     hope_jr,
     koch_follower,
     make_robot_from_config,
@@ -95,6 +96,7 @@ from lerobot.teleoperators import (  # noqa: F401
     make_teleoperator_from_config,
     so100_leader,
     so101_leader,
+    vr_teleoperator,
 )
 from lerobot.teleoperators.keyboard.teleop_keyboard import KeyboardTeleop
 from lerobot.utils.control_utils import (
@@ -293,6 +295,10 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
 
     robot = make_robot_from_config(cfg.robot)
     teleop = make_teleoperator_from_config(cfg.teleop) if cfg.teleop is not None else None
+    
+    # Special handling for VR teleoperator - needs robot reference for IK
+    if teleop is not None and hasattr(teleop, 'config') and getattr(teleop.config, 'type', None) == 'vr':
+        teleop._robot_reference = robot
 
     action_features = hw_to_dataset_features(robot.action_features, "action", cfg.dataset.video)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", cfg.dataset.video)

@@ -1,10 +1,11 @@
-from pybind11.setup_helpers import Pybind11Extension, build_ext
-from pybind11 import get_cmake_dir
-import pybind11
 from setuptools import setup, Extension
 import subprocess
 import sys
 import os
+
+from pybind11.setup_helpers import Pybind11Extension, build_ext
+from pybind11 import get_cmake_dir
+import pybind11
 
 # Check if Eigen3 is available
 def find_eigen():

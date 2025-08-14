@@ -24,18 +24,18 @@ class FrankaFERConfig(RobotConfig):
 
     # cameras
     cameras: dict[str, CameraConfig] = field(default_factory=lambda: {
-        "overhead": RealSenseCameraConfig(
-            serial_number_or_name="233522075872",  # First D435I camera
-            fps=25,
-            width=320,
-            height=240,
-            color_mode=ColorMode.RGB
-        ),
-        "third_person": RealSenseCameraConfig(
-            serial_number_or_name="938422076779",  # Second D435I camera
-            fps=25,
-            width=320,
-            height=240,
-            color_mode=ColorMode.RGB
-        )
+        # "overhead": RealSenseCameraConfig(
+        #     serial_number_or_name="233522075872",  # First D435I camera
+        #     fps=25,
+        #     width=320,
+        #     height=240,
+        #     color_mode=ColorMode.RGB
+        # ),
+        # "third_person": RealSenseCameraConfig(
+        #     serial_number_or_name="938422076779",  # Second D435I camera
+        #     fps=25,
+        #     width=320,
+        #     height=240,
+        #     color_mode=ColorMode.RGB
+        # )
     })

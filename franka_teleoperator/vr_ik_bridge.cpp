@@ -70,7 +70,7 @@ private:
     // Q7 limits (can be configured for different end effectors)
     double q7_min_ = -2.89;  // Full Franka range
     double q7_max_ = 2.89;
-    double q7_search_range_ = 0.25;  // Reduced from 0.75 to prevent large jumps
+    double q7_search_range_ = 0.5;  // Balanced range to allow movement while preventing large jumps
     double q7_optimization_tolerance_ = 1e-6;
     int q7_max_iterations_ = 100;
 

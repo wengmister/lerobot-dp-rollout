@@ -18,3 +18,13 @@ from .config import TeleoperatorConfig
 from .teleoperator import Teleoperator
 from .utils import make_teleoperator_from_config
 from .vr_teleoperator import VRTeleoperator, VRTeleoperatorConfig
+
+# Import teleoperator modules to trigger registration
+from . import (  # noqa: F401
+    bi_so100_leader,
+    homunculus,
+    koch_leader,
+    so100_leader,
+    so101_leader,
+    vr_teleoperator,
+)

@@ -113,16 +113,13 @@ class VRTeleoperator(Teleoperator):
         
         logger.info(f"VRTeleoperator initialized with TCP port {config.tcp_port}")
     
-    def connect(self, robot=None):
+    def connect(self, calibrate: bool = True):
         """Connect to VR input and setup IK solver"""
         if self._is_connected:
             raise RuntimeError("VRTeleoperator is already connected")
         
-        # Store robot reference for getting current state
-        self._robot_reference = robot
-        
-        if robot is None:
-            raise ValueError("Robot reference is required for VR teleoperator")
+        # Robot reference will be set during first get_action call
+        # This follows the standard teleoperator interface
         
         # Setup adb port forwarding if requested
         if self.config.auto_setup_adb:
@@ -133,10 +130,14 @@ class VRTeleoperator(Teleoperator):
             raise ConnectionError(f"Failed to start VR TCP server on port {self.config.tcp_port}")
         
         # Wait for robot to be connected to get initial state
-        if hasattr(robot, 'is_connected') and not robot.is_connected:
+        if self._robot_reference and hasattr(self._robot_reference, 'is_connected') and not self._robot_reference.is_connected:
             logger.warning("Robot is not connected yet. IK solver will be initialized when robot connects.")
         else:
-            self._initialize_ik_solver()
+            # Try to initialize IK solver if robot is available and connected
+            if self._robot_reference:
+                self._initialize_ik_solver()
+            else:
+                logger.info("Robot reference not yet available. IK solver will be initialized on first get_action call.")
         
         self._is_connected = True
         logger.info("VRTeleoperator connected successfully")
@@ -167,6 +168,15 @@ class VRTeleoperator(Teleoperator):
         """
         if not self._is_connected:
             raise RuntimeError("VRTeleoperator is not connected")
+        
+        # The robot reference should be available from initialization  
+        if self._robot_reference is None:
+            logger.error("Robot reference not available - VR teleoperator requires robot connection")
+            # Return last known action or zero position as fallback
+            if self._last_action is not None:
+                return self._last_action
+            else:
+                return {f"joint_{i}.pos": 0.0 for i in range(7)}
         
         # Initialize IK solver if not done yet (delayed initialization)
         if not self._initialized:

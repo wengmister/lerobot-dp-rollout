@@ -30,7 +30,7 @@ def test_complete_vr_system():
     # Create VR teleoperator configuration
     vr_config = VRTeleoperatorConfig(
         tcp_port=8000,
-        verbose=False,  # Enable verbose mode to see debug output
+        verbose=False,  # Disable verbose mode to reduce debug output
         smoothing_factor=0.7,
         use_bidexhand_limits=False
     )
@@ -51,7 +51,9 @@ def test_complete_vr_system():
         print("✓ VR teleoperator created")
         
         print("🔄 Connecting VR teleoperator to robot...")
-        vr_teleop.connect(robot=robot)
+        # Set robot reference for VR teleoperator
+        vr_teleop._robot_reference = robot
+        vr_teleop.connect()
         print("✓ VR teleoperator connected")
         print(f"✓ VR TCP server listening on port {vr_config.tcp_port}")
         
