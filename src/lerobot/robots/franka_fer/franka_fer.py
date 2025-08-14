@@ -45,6 +45,10 @@ class FrankaFER(Robot):
         for i in range(7):
             features[f"joint_{i}.pos"] = float
             
+        # Joint velocities (7 joints)
+        for i in range(7):
+            features[f"joint_{i}.vel"] = float
+            
         # Add camera features if any
         for cam_name, cam_config in self.config.cameras.items():
             features[cam_name] = (cam_config.height, cam_config.width, 3)
@@ -182,6 +186,12 @@ class FrankaFER(Robot):
             positions = robot_state["joint_positions"]
             for i, pos in enumerate(positions):
                 obs_dict[f"joint_{i}.pos"] = float(pos)
+            
+            # Add joint velocities if available
+            if robot_state["joint_velocities"] is not None:
+                velocities = robot_state["joint_velocities"]
+                for i, vel in enumerate(velocities):
+                    obs_dict[f"joint_{i}.vel"] = float(vel)
             
             # Add end-effector pose if available
             if robot_state["ee_pose"] is not None:
