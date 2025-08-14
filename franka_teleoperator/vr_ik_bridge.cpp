@@ -70,7 +70,7 @@ private:
     // Q7 limits (can be configured for different end effectors)
     double q7_min_ = -2.89;  // Full Franka range
     double q7_max_ = 2.89;
-    double q7_search_range_ = 0.75;
+    double q7_search_range_ = 0.25;  // Reduced from 0.75 to prevent large jumps
     double q7_optimization_tolerance_ = 1e-6;
     int q7_max_iterations_ = 100;
 
@@ -250,7 +250,7 @@ public:
         // Calculate target position: initial robot + VR delta
         Eigen::Vector3d target_position = initial_robot_pose_.translation() + vr_pos_delta;
         
-        // Calculate orientation delta
+        // Calculate orientation delta (matching franka_logger_client.cpp approach)
         Eigen::Quaterniond initial_vr_quat(
             initial_vr_pose_.quaternion[3], initial_vr_pose_.quaternion[0],
             initial_vr_pose_.quaternion[1], initial_vr_pose_.quaternion[2]
@@ -260,7 +260,10 @@ public:
             vr_pose.quaternion[1], vr_pose.quaternion[2]
         );
         
+        // Calculate VR orientation delta: current * initial^-1
         Eigen::Quaterniond vr_quat_delta = current_vr_quat * initial_vr_quat.inverse();
+        
+        // Apply delta to initial robot orientation: delta * initial_robot_orientation
         Eigen::Quaterniond target_orientation = vr_quat_delta * Eigen::Quaterniond(initial_robot_pose_.rotation());
         target_orientation.normalize();
         
@@ -279,6 +282,20 @@ public:
         double q7_start = std::max(q7_min_, current_q7 - q7_search_range_);
         double q7_end = std::min(q7_max_, current_q7 + q7_search_range_);
         
+        // Debug logging for IK inputs (when verbose)
+        if (config_.verbose) {
+            static int debug_counter = 0;
+            debug_counter++;
+            if (debug_counter % 50 == 0) {  // Log every 50 calls (~2Hz at 100Hz)
+                std::cout << "IK Input - Target pos: [" 
+                         << std::fixed << std::setprecision(3)
+                         << target_pos[0] << ", " << target_pos[1] << ", " << target_pos[2] << "]" << std::endl;
+                std::cout << "VR delta: [" 
+                         << vr_pos_delta.x() << ", " << vr_pos_delta.y() << ", " << vr_pos_delta.z() << "]" << std::endl;
+                std::cout << "Q7 range: [" << q7_start << ", " << q7_end << "] around " << current_q7 << std::endl;
+            }
+        }
+        
         // Solve IK
         WeightedIKResult ik_result = ik_solver_->solve_q7_optimized(
             target_pos, target_rot, current_joints,
@@ -286,6 +303,18 @@ public:
         );
         
         if (ik_result.success) {
+            if (config_.verbose) {
+                static int success_counter = 0;
+                success_counter++;
+                if (success_counter % 50 == 0) {
+                    std::cout << "IK Success - Joint targets: [";
+                    for (int i = 0; i < 7; i++) {
+                        std::cout << std::fixed << std::setprecision(3) << ik_result.joint_angles[i];
+                        if (i < 6) std::cout << ", ";
+                    }
+                    std::cout << "]" << std::endl;
+                }
+            }
             return ik_result.joint_angles;
         } else {
             if (config_.verbose) {
@@ -421,8 +450,28 @@ private:
             };
             new_pose.position = robot_position;
             
-            // Apply quaternion transformation as well (simplified version)
-            // This could be made more sophisticated to match logger_node.py exactly
+            // Apply quaternion transformation to match logger_node.py exactly
+            // Convert VR quaternion to rotation matrix
+            Eigen::Quaterniond vr_quat(new_pose.quaternion[3], new_pose.quaternion[0], 
+                                      new_pose.quaternion[1], new_pose.quaternion[2]);
+            Eigen::Matrix3d vr_matrix = vr_quat.toRotationMatrix();
+            
+            // Define coordinate transformation matrix from VR to robot
+            // VR: [right, up, forward] → Robot: [forward, left, up]  
+            // This maps: VR_x→Robot_y, VR_y→Robot_z, VR_z→Robot_x
+            // Include handedness flip by negating one axis
+            Eigen::Matrix3d transform_matrix;
+            transform_matrix << 0,  0,  1,   // Robot X = VR Z (forward)
+                               -1,  0,  0,   // Robot Y = -VR X (left = -right)  
+                                0,  1,  0;   // Robot Z = VR Y (up)
+            
+            // Apply transformation: R_robot = T * R_vr * T^-1
+            Eigen::Matrix3d robot_matrix = transform_matrix * vr_matrix * transform_matrix.transpose();
+            
+            // Convert back to quaternion and store in new_pose
+            Eigen::Quaterniond robot_quat(robot_matrix);
+            robot_quat.normalize();
+            new_pose.quaternion = {robot_quat.x(), robot_quat.y(), robot_quat.z(), robot_quat.w()};
             
             // Apply smoothing
             if (vr_initialized_) {

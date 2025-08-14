@@ -30,7 +30,7 @@ def test_complete_vr_system():
     # Create VR teleoperator configuration
     vr_config = VRTeleoperatorConfig(
         tcp_port=8000,
-        verbose=False,
+        verbose=False,  # Enable verbose mode to see debug output
         smoothing_factor=0.7,
         use_bidexhand_limits=False
     )
@@ -102,7 +102,7 @@ def test_complete_vr_system():
                         print(f"  VR position: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]")
                 
                 # Optional: Send action to robot (BE CAREFUL!)
-                # robot.send_action(action)
+                robot.send_action(action)
                 
                 iteration += 1
                 time.sleep(0.04)  # 25Hz

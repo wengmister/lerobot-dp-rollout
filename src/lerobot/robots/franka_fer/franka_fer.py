@@ -135,13 +135,36 @@ class FrankaFER(Robot):
     
     def _get_joint_positions(self) -> Optional[np.ndarray]:
         """Get current joint positions from server"""
+        state = self._get_robot_state()
+        if state is not None:
+            return state["joint_positions"]
+        return None
+    
+    def _get_robot_state(self) -> Optional[dict]:
+        """Get full robot state from server"""
         response = self._send_command("GET_STATE")
         if response and response.startswith("STATE"):
-            # Parse: STATE pos0 pos1 ... pos6 vel0 vel1 ... vel6
+            # Parse: STATE pos0 pos1 ... pos6 vel0 vel1 ... vel6 ee_pose_0 ... ee_pose_15
             parts = response.split()[1:]  # Skip "STATE"
-            if len(parts) >= 14:
-                positions = [float(x) for x in parts[:7]]
-                return np.array(positions)
+            if len(parts) >= 30:  # 7 positions + 7 velocities + 16 ee_pose elements
+                positions = np.array([float(x) for x in parts[:7]])
+                velocities = np.array([float(x) for x in parts[7:14]])
+                ee_pose = np.array([float(x) for x in parts[14:30]])
+                
+                return {
+                    "joint_positions": positions,
+                    "joint_velocities": velocities,
+                    "ee_pose": ee_pose
+                }
+            elif len(parts) >= 14:  # Backwards compatibility - old server without ee_pose
+                positions = np.array([float(x) for x in parts[:7]])
+                velocities = np.array([float(x) for x in parts[7:14]])
+                
+                return {
+                    "joint_positions": positions,
+                    "joint_velocities": velocities,
+                    "ee_pose": None
+                }
         return None
     
     def get_observation(self) -> dict[str, Any]:
@@ -151,14 +174,21 @@ class FrankaFER(Robot):
         
         obs_dict = {}
         
-        # Get joint positions
+        # Get full robot state including ee_pose
         start = time.perf_counter()
-        positions = self._get_joint_positions()
-        if positions is not None:
+        robot_state = self._get_robot_state()
+        if robot_state is not None:
+            # Add joint positions
+            positions = robot_state["joint_positions"]
             for i, pos in enumerate(positions):
                 obs_dict[f"joint_{i}.pos"] = float(pos)
+            
+            # Add end-effector pose if available
+            if robot_state["ee_pose"] is not None:
+                obs_dict["ee_pose"] = robot_state["ee_pose"].tolist()  # Convert to list for JSON serialization
+                
         dt_ms = (time.perf_counter() - start) * 1e3
-        logger.debug(f"{self} read joint positions: {dt_ms:.1f}ms")
+        logger.debug(f"{self} read robot state: {dt_ms:.1f}ms")
         
         # Capture images from cameras
         for cam_key, cam in self.cameras.items():

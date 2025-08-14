@@ -35,7 +35,7 @@ echo "Building pybind11 module..."
 python3 setup.py build_ext --inplace
 
 # Check if build was successful
-if [ -f "vr_ik_bridge*.so" ] || [ -f "vr_ik_bridge*.pyd" ]; then
+if ls vr_ik_bridge*.so 1> /dev/null 2>&1 || ls vr_ik_bridge*.pyd 1> /dev/null 2>&1; then
     echo "✓ Build successful!"
     echo ""
     echo "Usage:"

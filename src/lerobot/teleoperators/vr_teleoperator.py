@@ -254,11 +254,15 @@ class VRTeleoperator(Teleoperator):
             self.vr_bridge.set_q7_limits(self.config.q7_min, self.config.q7_max)
             
             # Get initial robot pose (end-effector transformation matrix)
+            # Debug: Check what observation keys are available
+            logger.info(f"Available observation keys: {list(current_obs.keys())}")
+            
             # Note: This assumes the robot observation includes end-effector pose
             # You might need to compute this from forward kinematics if not available
             if "ee_pose" in current_obs:
                 ee_pose = current_obs["ee_pose"]
                 if len(ee_pose) == 16:  # 4x4 transformation matrix
+                    logger.info(f"Using robot ee_pose: {ee_pose[:4]} (first row)")
                     self.vr_bridge.set_initial_robot_pose(ee_pose)
                 else:
                     logger.warning("End-effector pose format not recognized, using identity")
@@ -266,7 +270,8 @@ class VRTeleoperator(Teleoperator):
                     identity = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
                     self.vr_bridge.set_initial_robot_pose(identity)
             else:
-                logger.warning("No end-effector pose in observation, using identity")
+                logger.warning("No end-effector pose in observation, using identity matrix!")
+                logger.warning("This will cause IK targets to be relative to [0,0,0] instead of robot position!")
                 identity = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
                 self.vr_bridge.set_initial_robot_pose(identity)
             

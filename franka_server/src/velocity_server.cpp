@@ -324,6 +324,13 @@ private:
             response << std::fixed << std::setprecision(6) << latest_robot_state_.joint_velocities[i];
             if (i < 6) response << " ";
         }
+        response << " ";
+        
+        // End-effector pose (4x4 transformation matrix)
+        for (int i = 0; i < 16; i++) {
+            response << std::fixed << std::setprecision(6) << latest_robot_state_.ee_pose[i];
+            if (i < 15) response << " ";
+        }
         
         sendResponse(response.str());
     }
