@@ -156,17 +156,17 @@ class FrankaFER(Robot):
         if response and response.startswith("STATE"):
             # Parse: STATE pos0 pos1 ... pos6 vel0 vel1 ... vel6 ee_pose_0 ... ee_pose_15
             parts = response.split()[1:]  # Skip "STATE"
-            if len(parts) >= 30:  # 7 positions + 7 velocities + 16 ee_pose elements
-                positions = np.array([float(x) for x in parts[:7]])
-                velocities = np.array([float(x) for x in parts[7:14]])
-                ee_pose = np.array([float(x) for x in parts[14:30]])
+            # if len(parts) >= 30:  # 7 positions + 7 velocities + 16 ee_pose elements
+            #     positions = np.array([float(x) for x in parts[:7]])
+            #     velocities = np.array([float(x) for x in parts[7:14]])
+            #     ee_pose = np.array([float(x) for x in parts[14:30]])
                 
-                return {
-                    "joint_positions": positions,
-                    "joint_velocities": velocities,
-                    "ee_pose": ee_pose
-                }
-            elif len(parts) >= 14:  # Backwards compatibility - old server without ee_pose
+            #     return {
+            #         "joint_positions": positions,
+            #         "joint_velocities": velocities,
+            #         "ee_pose": ee_pose
+            #     }
+            if len(parts) >= 14:  # Backwards compatibility - old server without ee_pose
                 positions = np.array([float(x) for x in parts[:7]])
                 velocities = np.array([float(x) for x in parts[7:14]])
                 
