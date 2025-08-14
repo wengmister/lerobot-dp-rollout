@@ -1,0 +1,113 @@
+{
+    "codebase_version": "v2.1",
+    "robot_type": "franka_fer",
+    "total_episodes": 39,
+    "total_frames": 6040,
+    "total_tasks": 1,
+    "total_videos": 40,
+    "total_chunks": 1,
+    "chunks_size": 1000,
+    "fps": 30,
+    "splits": {
+        "train": "0:40"
+    },
+    "data_path": "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet",
+    "video_path": "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4",
+    "features": {
+        "action": {
+            "dtype": "float32",
+            "shape": [
+                7
+            ],
+            "names": [
+                "joint_0.pos",
+                "joint_1.pos",
+                "joint_2.pos",
+                "joint_3.pos",
+                "joint_4.pos",
+                "joint_5.pos",
+                "joint_6.pos"
+            ]
+        },
+        "observation.state": {
+            "dtype": "float32",
+            "shape": [
+                14
+            ],
+            "names": [
+                "joint_0.pos",
+                "joint_1.pos",
+                "joint_2.pos",
+                "joint_3.pos",
+                "joint_4.pos",
+                "joint_5.pos",
+                "joint_6.pos",
+                "joint_0.vel",
+                "joint_1.vel",
+                "joint_2.vel",
+                "joint_3.vel",
+                "joint_4.vel",
+                "joint_5.vel",
+                "joint_6.vel"
+            ]
+        },
+        "observation.images.third_person": {
+            "dtype": "video",
+            "shape": [
+                240,
+                320,
+                3
+            ],
+            "names": [
+                "height",
+                "width",
+                "channels"
+            ],
+            "info": {
+                "video.height": 240,
+                "video.width": 320,
+                "video.codec": "av1",
+                "video.pix_fmt": "yuv420p",
+                "video.is_depth_map": false,
+                "video.fps": 30,
+                "video.channels": 3,
+                "has_audio": false
+            }
+        },
+        "timestamp": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "frame_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "episode_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "task_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        }
+    }
+}

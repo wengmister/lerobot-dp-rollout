@@ -319,11 +319,16 @@ class PolicyServer(services_pb2_grpc.AsyncInferenceServicer):
 
     def _get_action_chunk(self, observation: dict[str, torch.Tensor]) -> torch.Tensor:
         """Get an action chunk from the policy. The chunk contains only"""
-        chunk = self.policy.predict_action_chunk(observation)
-        if chunk.ndim != 3:
-            chunk = chunk.unsqueeze(0)  # adding batch dimension, now shape is (B, chunk_size, action_dim)
-
-        return chunk[:, : self.actions_per_chunk, :]
+        # For diffusion policies, we need to call select_action multiple times to get a chunk
+        # or use predict_action_chunk if the queues are properly populated
+        actions = []
+        for _ in range(self.actions_per_chunk):
+            action = self.policy.select_action(observation)
+            actions.append(action)
+        
+        # Stack actions into a chunk: [actions_per_chunk, action_dim]
+        chunk = torch.stack(actions, dim=0)
+        return chunk
 
     def _predict_action_chunk(self, observation_t: TimedObservation) -> list[TimedAction]:
         """Predict an action chunk based on an observation"""

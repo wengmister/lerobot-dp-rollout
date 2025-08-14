@@ -52,6 +52,7 @@ from lerobot.configs.policies import PreTrainedConfig
 from lerobot.robots import (  # noqa: F401
     Robot,
     RobotConfig,
+    franka_fer,
     koch_follower,
     make_robot_from_config,
     so100_follower,
@@ -361,6 +362,8 @@ class RobotClient:
             return not self.action_queue.empty()
 
     def _action_tensor_to_action_dict(self, action_tensor: torch.Tensor) -> dict[str, float]:
+        # Ensure action_tensor is 1D
+        action_tensor = action_tensor.flatten()
         action = {key: action_tensor[i].item() for i, key in enumerate(self.robot.action_features)}
         return action
 
