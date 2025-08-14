@@ -307,6 +307,10 @@ class FrankaFER(Robot):
             if response == "OK":
                 logger.info("Home position command sent successfully")
                 
+                # Reconnect cameras after home movement
+                for cam in self.cameras.values():
+                    cam.connect()
+                
                 # Reset VR initial pose if VR teleoperator is registered
                 if self._vr_teleoperator is not None:
                     try:

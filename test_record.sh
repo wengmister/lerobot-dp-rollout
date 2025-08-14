@@ -5,7 +5,8 @@
     --teleop.type=vr \
     --teleop.tcp_port=8000 \
     --teleop.verbose=false \
-    --dataset.episode_time_s=30 \
+    --dataset.fps=30 \
+    --dataset.episode_time_s=10 \
     --dataset.num_episodes=1 \
     --dataset.root=./datasets \
     --dataset.repo_id=your_username/franka_vr_test \

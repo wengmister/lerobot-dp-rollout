@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 
 from lerobot.cameras import CameraConfig
+from lerobot.cameras.opencv import OpenCVCameraConfig
 from lerobot.cameras.realsense import RealSenseCameraConfig
 from lerobot.cameras.configs import ColorMode
 
@@ -24,18 +25,18 @@ class FrankaFERConfig(RobotConfig):
 
     # cameras
     cameras: dict[str, CameraConfig] = field(default_factory=lambda: {
-        # "overhead": RealSenseCameraConfig(
-        #     serial_number_or_name="233522075872",  # First D435I camera
-        #     fps=25,
-        #     width=320,
-        #     height=240,
-        #     color_mode=ColorMode.RGB
-        # ),
-        # "third_person": RealSenseCameraConfig(
-        #     serial_number_or_name="938422076779",  # Second D435I camera
-        #     fps=25,
-        #     width=320,
-        #     height=240,
-        #     color_mode=ColorMode.RGB
-        # )
+        "overhead": OpenCVCameraConfig(
+            index_or_path="/dev/video6",  # Overhead camera
+            fps=30,
+            width=320,
+            height=240,
+            color_mode=ColorMode.RGB
+        ),
+        "third_person": OpenCVCameraConfig(
+            index_or_path="/dev/video12",  # Third person view camera
+            fps=30,
+            width=320,
+            height=240,
+            color_mode=ColorMode.RGB
+        )
     })

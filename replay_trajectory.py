@@ -139,13 +139,11 @@ def replay_trajectory(joint_trajectory, timestamps, robot_config=None, dry_run=T
             action = {f"joint_{i}.pos": float(joint_positions[i]) for i in range(7)}
             
             if dry_run:
-                if i % 30 == 0:  # Print every second
-                    print(f"Frame {i:4d} @ {target_time:6.2f}s: {[f'{j:.3f}' for j in joint_positions]}")
+                print(f"Frame {i:4d} @ {target_time:6.2f}s: {[f'{j:.3f}' for j in joint_positions]}")
             else:
                 # Send to robot
                 robot.send_action(action)
-                if i % 30 == 0:
-                    print(f"Frame {i:4d} @ {target_time:6.2f}s: Sent to robot")
+                print(f"Frame {i:4d} @ {target_time:6.2f}s: Sent to robot")
                     
     except KeyboardInterrupt:
         print("\nTrajectory replay interrupted")
