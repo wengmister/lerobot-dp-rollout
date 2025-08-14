@@ -299,6 +299,9 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
     # Special handling for VR teleoperator - needs robot reference for IK
     if teleop is not None and hasattr(teleop, 'config') and getattr(teleop.config, 'type', None) == 'vr':
         teleop._robot_reference = robot
+        # Register VR teleoperator with robot for coordinated pose reset
+        if hasattr(robot, 'register_vr_teleoperator'):
+            robot.register_vr_teleoperator(teleop)
 
     action_features = hw_to_dataset_features(robot.action_features, "action", cfg.dataset.video)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", cfg.dataset.video)
@@ -339,6 +342,14 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
     if teleop is not None:
         teleop.connect()
 
+    # Move robot to home position before starting recording
+    if hasattr(robot, 'reset_to_home'):
+        log_say("Moving robot to home position", cfg.play_sounds)
+        if robot.reset_to_home():
+            log_say("Robot moved to home position successfully", cfg.play_sounds)
+        else:
+            log_say("Warning: Failed to move robot to home position", cfg.play_sounds)
+
     listener, events = init_keyboard_listener()
 
     with VideoEncodingManager(dataset):
@@ -363,6 +374,12 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
                 (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
             ):
                 log_say("Reset the environment", cfg.play_sounds)
+                
+                # Move robot to home position during reset
+                if hasattr(robot, 'reset_to_home'):
+                    log_say("Moving robot to home position", cfg.play_sounds)
+                    robot.reset_to_home()
+                
                 record_loop(
                     robot=robot,
                     events=events,

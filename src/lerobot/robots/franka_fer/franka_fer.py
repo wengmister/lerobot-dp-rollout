@@ -35,6 +35,7 @@ class FrankaFER(Robot):
         self.socket = None
         self.cameras = make_cameras_from_configs(config.cameras)
         self._is_connected = False
+        self._vr_teleoperator = None  # Reference to VR teleoperator for pose reset
         
     @cached_property
     def observation_features(self) -> dict[str, type | tuple]:
@@ -136,6 +137,11 @@ class FrankaFER(Robot):
         # The C++ server applies dynamics factor when it connects to the robot
         # No additional configuration needed here
         pass
+    
+    def register_vr_teleoperator(self, vr_teleoperator):
+        """Register a VR teleoperator for coordinated pose reset"""
+        self._vr_teleoperator = vr_teleoperator
+        logger.info("VR teleoperator registered with robot for coordinated pose reset")
     
     def _get_joint_positions(self) -> Optional[np.ndarray]:
         """Get current joint positions from server"""
@@ -300,6 +306,21 @@ class FrankaFER(Robot):
             
             if response == "OK":
                 logger.info("Home position command sent successfully")
+                
+                # Reset VR initial pose if VR teleoperator is registered
+                if self._vr_teleoperator is not None:
+                    try:
+                        if hasattr(self._vr_teleoperator, 'reset_initial_pose'):
+                            logger.info("Resetting VR initial pose to new robot home position...")
+                            if self._vr_teleoperator.reset_initial_pose():
+                                logger.info("VR initial pose reset successfully")
+                            else:
+                                logger.warning("Failed to reset VR initial pose")
+                        else:
+                            logger.warning("VR teleoperator does not support pose reset")
+                    except Exception as e:
+                        logger.error(f"Error resetting VR initial pose: {e}")
+                
                 return True
             else:
                 logger.warning(f"Home position command failed: {response}")

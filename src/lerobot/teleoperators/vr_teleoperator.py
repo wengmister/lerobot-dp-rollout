@@ -293,6 +293,25 @@ class VRTeleoperator(Teleoperator):
             logger.error(f"Failed to initialize IK solver: {e}")
             return False
     
+    def reset_initial_pose(self) -> bool:
+        """Reset the VR initial pose reference to current robot position"""
+        if not self._is_connected or not self._initialized:
+            logger.warning("VR teleoperator not connected or initialized, cannot reset pose")
+            return False
+            
+        try:
+            # Re-initialize the IK solver with current robot position as new reference
+            success = self._initialize_ik_solver()
+            if success:
+                logger.info("VR initial pose reset successfully to current robot position")
+            else:
+                logger.error("Failed to reset VR initial pose")
+            return success
+            
+        except Exception as e:
+            logger.error(f"Failed to reset VR initial pose: {e}")
+            return False
+    
     def _setup_adb_reverse(self):
         """Setup adb reverse port forwarding for Android VR apps"""
         try:

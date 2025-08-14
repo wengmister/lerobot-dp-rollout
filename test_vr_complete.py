@@ -95,7 +95,6 @@ def test_complete_vr_system():
                 # Print status every 0.1 second
                 if iteration % 2 == 0:  # Every 0.1 second at 25Hz
                     print(f"\n📊 Iteration {iteration}:")
-                    print(f"  VR connected: {'✓' if status.get('vr_connected', False) else '✗'}")
                     print(f"  VR ready: {'✓' if status.get('vr_ready', False) else '✗'}")
                     print(f"  Joint targets: {[f'{j:.3f}' for j in joint_positions]}")
                     
