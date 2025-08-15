@@ -19,8 +19,8 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
-#include "include/weighted_ik.h"
-#include "include/geofik.h"
+#include "../include/weighted_ik.h"
+#include "../include/geofik.h"
 #include <Eigen/Dense>
 
 namespace py = pybind11;

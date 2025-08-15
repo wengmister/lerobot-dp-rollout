@@ -8,10 +8,10 @@ import time
 import numpy as np
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from adb_setup import setup_adb_reverse, cleanup_adb_reverse
+from src.adb_setup import setup_adb_reverse, cleanup_adb_reverse
 
 def test_vr_arm_control():
     print("Testing VR control of Franka arm...")
@@ -19,7 +19,7 @@ def test_vr_arm_control():
     try:
         # Import components
         import vr_message_router
-        from arm_ik_processor import ArmIKProcessor
+        from src.arm_ik_processor import ArmIKProcessor
         from lerobot.robots.franka_fer.franka_fer import FrankaFER
         from lerobot.robots.franka_fer.franka_fer_config import FrankaFERConfig
         
@@ -45,7 +45,7 @@ def test_vr_arm_control():
         # Initialize arm IK processor
         ik_config = {
             'verbose': True,  # Enable for debugging translation issues
-            'smoothing_factor': 0.3  # Reduced from 0.8 for more responsive movement
+            'smoothing_factor': 0.1  # Reduced from 0.8 for more responsive movement
         }
         
         arm_processor = ArmIKProcessor(ik_config)

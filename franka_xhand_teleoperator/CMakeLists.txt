@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.12)
-project(vr_ik_bridge)
+project(franka_xhand_teleoperator)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,27 +12,48 @@ find_package(Eigen3 REQUIRED)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${EIGEN3_INCLUDE_DIR})
 
-# Add source files
-set(SOURCES
+# Common source files
+set(COMMON_SOURCES
     src/weighted_ik.cpp
     src/geofik.cpp
-    vr_ik_bridge.cpp
 )
 
-# Create pybind11 module
-pybind11_add_module(vr_ik_bridge ${SOURCES})
+# VR Message Router module
+pybind11_add_module(vr_message_router 
+    src/vr_message_router.cpp
+)
 
-# Set compiler flags
+target_compile_features(vr_message_router PRIVATE cxx_std_17)
+set_target_properties(vr_message_router PROPERTIES
+    CXX_VISIBILITY_PRESET "hidden"
+    VISIBILITY_INLINES_HIDDEN ON
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
+# Weighted IK Bridge module
+pybind11_add_module(weighted_ik_bridge 
+    src/weighted_ik_bridge.cpp
+    ${COMMON_SOURCES}
+)
+
+target_compile_features(weighted_ik_bridge PRIVATE cxx_std_17)
+target_link_libraries(weighted_ik_bridge PRIVATE Eigen3::Eigen)
+set_target_properties(weighted_ik_bridge PROPERTIES
+    CXX_VISIBILITY_PRESET "hidden"
+    VISIBILITY_INLINES_HIDDEN ON
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
+# VR IK Bridge module (if needed)
+pybind11_add_module(vr_ik_bridge 
+    src/vr_ik_bridge.cpp
+    ${COMMON_SOURCES}
+)
+
 target_compile_features(vr_ik_bridge PRIVATE cxx_std_17)
-
-# Link libraries
 target_link_libraries(vr_ik_bridge PRIVATE Eigen3::Eigen)
-
-# Set module properties
 set_target_properties(vr_ik_bridge PROPERTIES
     CXX_VISIBILITY_PRESET "hidden"
     VISIBILITY_INLINES_HIDDEN ON
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
-
-# Install the module
-install(TARGETS vr_ik_bridge DESTINATION .)

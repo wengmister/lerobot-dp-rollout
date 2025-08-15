@@ -8,7 +8,7 @@ import time
 import numpy as np
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from adb_setup import setup_adb_reverse, cleanup_adb_reverse
@@ -19,8 +19,8 @@ def test_vr_hand_control():
     try:
         # Import components
         import vr_message_router
-        from hand_retargeting_processor import HandRetargetingProcessor
-        from lerobot.robots.xhand.xhand import XHandRobot
+        from src.hand_retargeting_processor import HandRetargetingProcessor
+        from lerobot.robots.xhand.xhand import XHand
         from lerobot.robots.xhand.xhand_config import XHandConfig
         
         print("Successfully imported all components")
@@ -44,7 +44,7 @@ def test_vr_hand_control():
         
         # Initialize hand retargeting processor
         retargeting_config = {
-            'verbose': False,
+            'verbose': True,  # Enable verbose logging for debugging
             'smoothing_factor': 0.8
         }
         
@@ -54,7 +54,7 @@ def test_vr_hand_control():
         # Initialize XHand robot
         print("Connecting to XHand robot...")
         xhand_config = XHandConfig()
-        xhand_robot = XHandRobot(xhand_config)
+        xhand_robot = XHand(xhand_config)
         xhand_robot.connect()
         print("Connected to XHand robot")
         

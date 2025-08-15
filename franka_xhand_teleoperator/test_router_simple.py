@@ -5,6 +5,10 @@ Simple test script for VR Message Router
 
 import time
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
 from adb_setup import setup_adb_reverse, cleanup_adb_reverse
 
 def test_vr_message_router():

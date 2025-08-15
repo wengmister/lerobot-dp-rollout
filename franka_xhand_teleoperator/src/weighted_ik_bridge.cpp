@@ -6,7 +6,7 @@
 #include <pybind11/numpy.h>
 
 // Include the weighted IK solver
-#include "include/weighted_ik.h"
+#include "../include/weighted_ik.h"
 
 namespace py = pybind11;
 
