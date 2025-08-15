@@ -227,8 +227,16 @@ class XHand(Robot):
             error_struct, state = self._device.read_state(self._hand_id, True)
             
             if error_struct.error_code != 0:
-                logger.warning(f"Failed to read XHand state: {error_struct.error_message}")
-                return None
+                # Ignore known hardware sensor errors that don't affect position reading
+                ignored_errors = [
+                    "Sensor fails to read the combined force",
+                    "Sensor fails to read the distributed force", 
+                    "Sensor fails to read temperature"
+                ]
+                
+                if not any(ignored_error in error_struct.error_message for ignored_error in ignored_errors):
+                    logger.warning(f"Failed to read XHand state: {error_struct.error_message}")
+                    return None
             
             # Extract joint positions and torques
             positions = np.zeros(12)

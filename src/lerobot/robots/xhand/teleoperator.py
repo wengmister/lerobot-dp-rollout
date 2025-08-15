@@ -156,9 +156,15 @@ class XHandTeleoperator:
             action = self._convert_to_xhand_action(xhand_joint_positions)
             self.xhand_robot.send_action(action)
             
+            # Read observations from robot
+            observation = self.xhand_robot.get_observation()
+            
             # Print joint angles for visualization in stub mode
             if self.xhand_robot._device is None:  # Stub mode
                 self._print_joint_visualization(xhand_joint_positions)
+            else:
+                # Print actual robot observations in real mode
+                self._print_robot_observations(observation)
             
             return True
             
@@ -315,3 +321,50 @@ class XHandTeleoperator:
             xhand_joint_positions[3] = -xhand_joint_positions[3]  # Invert index bend for XHand
         
         return xhand_joint_positions
+    
+    def _print_robot_observations(self, observation: Dict[str, Any]) -> None:
+        """
+        Print robot observations including joint positions and torques.
+        
+        Args:
+            observation: Robot observation dictionary
+        """
+        # Extract joint positions and torques
+        positions = []
+        torques = []
+        
+        for i in range(12):
+            pos_key = f"joint_{i}.pos"
+            torque_key = f"joint_{i}.torque"
+            
+            if pos_key in observation:
+                positions.append(observation[pos_key] * 180.0 / np.pi)  # Convert to degrees
+            if torque_key in observation:
+                torques.append(observation[torque_key])
+        
+        if positions:
+            print("\n" + "="*80)
+            print("XHand Robot State:")
+            print("-" * 80)
+            
+            for i in range(min(len(positions), 12)):
+                pos_deg = positions[i] if i < len(positions) else 0.0
+                torque = torques[i] if i < len(torques) else 0
+                
+                # Create position bar chart
+                bar_length = int(abs(pos_deg) / 5)
+                bar_length = min(bar_length, 18)
+                
+                if pos_deg >= 0:
+                    bar = "+" * bar_length
+                    spaces = " " * (18 - bar_length)
+                    bar_display = f"|{spaces}{bar}|"
+                else:
+                    bar = "-" * bar_length
+                    spaces = " " * (18 - bar_length)
+                    bar_display = f"|{bar}{spaces}|"
+                
+                print(f"Joint {i:2d}: {pos_deg:6.1f}° {bar_display} Torque: {torque:4d}mNm")
+            
+            print("="*80)
+            print()
