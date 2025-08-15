@@ -21,11 +21,11 @@ class XHandConfig(RobotConfig):
     default_kp: int = 100  # Proportional gain
     default_ki: int = 0   # Integral gain  
     default_kd: int = 0   # Derivative gain
-    default_tor_max: int = 200  # Maximum torque (mNm) (mechanical limit appears to be 300, not 100 on TDS)
+    default_tor_max: int = 200  # Maximum torque (mA) (limited at 400mA torque-current limit)
     default_mode: int = 3     # Control mode
     
     # Robot limits and safety
-    max_torque: float = 100.0  # Maximum torque per joint (mNm) - from examples
+    max_torque: float = 200.0  # Maximum torque per joint (mA) - from examples
     
     # Control settings
     control_frequency: float = 100.0  # Hz

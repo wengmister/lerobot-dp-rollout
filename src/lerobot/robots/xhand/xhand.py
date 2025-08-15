@@ -354,7 +354,7 @@ class XHand(Robot):
             return False
         
         # TODO: Implement emergency stop
-        logger.info("XHand emergency stop")
+        logger.info("XHand emergency stop - NOT IMPLEMENTED")
         return True
     
     def recover_from_errors(self) -> bool:
@@ -363,5 +363,5 @@ class XHand(Robot):
             return False
         
         # TODO: Implement error recovery
-        logger.info("XHand error recovery")
+        logger.info("XHand error recovery - NOT IMPLEMENTED")
         return True
