@@ -34,6 +34,7 @@ python src/lerobot/scripts/server/robot_client.py \
 
 import logging
 import pickle  # nosec
+import signal
 import threading
 import time
 from collections.abc import Callable
@@ -122,6 +123,7 @@ class RobotClient:
         self.logger.info(f"Initializing client to connect to server at {self.server_address}")
 
         self.shutdown_event = threading.Event()
+        self._stop_called = threading.Event()  # Guard against multiple stop() calls
 
         # Initialize client side variables
         self.latest_action_lock = threading.Lock()
@@ -137,8 +139,18 @@ class RobotClient:
 
         # FPS measurement
         self.fps_tracker = FPSTracker(target_fps=self.config.fps)
+        
+        # Inference time tracking (round-trip from client perspective)
+        self.inference_times = []
+        self.inference_times_lock = threading.Lock()
+        self.observation_send_times = {}  # Map timestep -> send_time
 
         self.logger.info("Robot connected and ready")
+
+        # Reset robot to home position for consistent starting state
+        self.logger.info("Resetting robot to home position for policy deployment...")
+        self.robot.reset_to_home()
+        self.logger.info("Robot reset to home position complete")
 
         # Use an event for thread-safe coordination
         self.must_go = threading.Event()
@@ -180,13 +192,25 @@ class RobotClient:
 
     def stop(self):
         """Stop the robot client"""
+        # Prevent multiple calls to stop()
+        if self._stop_called.is_set():
+            self.logger.debug("Stop already called, skipping")
+            return
+        
+        self._stop_called.set()
         self.shutdown_event.set()
 
-        self.robot.disconnect()
-        self.logger.debug("Robot disconnected")
+        try:
+            self.robot.disconnect()
+            self.logger.debug("Robot disconnected")
+        except Exception as e:
+            self.logger.warning(f"Error during robot disconnect: {e}")
 
-        self.channel.close()
-        self.logger.debug("Client stopped, channel closed")
+        try:
+            self.channel.close()
+            self.logger.debug("Client stopped, channel closed")
+        except Exception as e:
+            self.logger.warning(f"Error during channel close: {e}")
 
     def send_observation(
         self,
@@ -212,8 +236,13 @@ class RobotClient:
                 log_prefix="[CLIENT] Observation",
                 silent=True,
             )
-            _ = self.stub.SendObservations(observation_iterator)
+            
+            # Record send time for inference time calculation
+            send_time = time.perf_counter()
             obs_timestep = obs.get_timestep()
+            self.observation_send_times[obs_timestep] = send_time
+            
+            _ = self.stub.SendObservations(observation_iterator)
             self.logger.info(f"Sent observation #{obs_timestep} | ")
 
             return True
@@ -288,6 +317,7 @@ class RobotClient:
                     continue  # received `Empty` from server, wait for next call
 
                 receive_time = time.time()
+                receive_perf_time = time.perf_counter()
 
                 # Deserialize bytes back into list[TimedAction]
                 deserialize_start = time.perf_counter()
@@ -295,6 +325,22 @@ class RobotClient:
                 deserialize_time = time.perf_counter() - deserialize_start
 
                 self.action_chunk_size = max(self.action_chunk_size, len(timed_actions))
+                
+                # Calculate inference time (round-trip from client perspective)
+                if len(timed_actions) > 0:
+                    first_action_timestep = timed_actions[0].get_timestep()
+                    if first_action_timestep in self.observation_send_times:
+                        send_time = self.observation_send_times[first_action_timestep]
+                        inference_time_ms = (receive_perf_time - send_time) * 1000
+                        
+                        with self.inference_times_lock:
+                            self.inference_times.append(inference_time_ms)
+                            # Keep only last 100 measurements to avoid memory growth
+                            if len(self.inference_times) > 100:
+                                self.inference_times.pop(0)
+                        
+                        # Clean up old send times to prevent memory growth
+                        del self.observation_send_times[first_action_timestep]
 
                 # Calculate network latency if we have matching observations
                 if len(timed_actions) > 0 and verbose:
@@ -467,16 +513,19 @@ class RobotClient:
         while self.running:
             control_loop_start = time.perf_counter()
             """Control loop: (1) Performing actions, when available"""
-            if self.actions_available():
+            if self.running and self.actions_available():
                 _performed_action = self.control_loop_action(verbose)
 
             """Control loop: (2) Streaming observations to the remote policy server"""
-            if self._ready_to_send_observation():
+            if self.running and self._ready_to_send_observation():
                 _captured_observation = self.control_loop_observation(task, verbose)
 
-            self.logger.info(f"Control loop (ms): {(time.perf_counter() - control_loop_start) * 1000:.2f}")
-            # Dynamically adjust sleep time to maintain the desired control frequency
-            time.sleep(max(0, self.config.environment_dt - (time.perf_counter() - control_loop_start)))
+            if self.running:
+                self.logger.info(f"Control loop (ms): {(time.perf_counter() - control_loop_start) * 1000:.2f}")
+                # Dynamically adjust sleep time to maintain the desired control frequency
+                sleep_time = max(0, self.config.environment_dt - (time.perf_counter() - control_loop_start))
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
 
         return _captured_observation, _performed_action
 
@@ -489,6 +538,16 @@ def async_client(cfg: RobotClientConfig):
         raise ValueError(f"Robot {cfg.robot.type} not yet supported!")
 
     client = RobotClient(cfg)
+    
+    # Signal handler for graceful shutdown
+    def signal_handler(signum, _):
+        client.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+        client.shutdown_event.set()  # Signal the main loop to stop
+        # Don't call sys.exit() here - let the finally block handle cleanup
+    
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
     if client.start():
         client.logger.info("Starting action receiver thread...")
@@ -507,7 +566,9 @@ def async_client(cfg: RobotClientConfig):
             client.stop()
             action_receiver_thread.join()
             if cfg.debug_visualize_queue_size:
-                visualize_action_queue_size(client.action_queue_size)
+                with client.inference_times_lock:
+                    inference_times_copy = client.inference_times.copy()
+                visualize_action_queue_size(client.action_queue_size, inference_times_copy)
             client.logger.info("Client stopped")
 
 

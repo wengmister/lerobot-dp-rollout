@@ -8,6 +8,6 @@
     --dataset.fps=30 \
     --dataset.episode_time_s=10 \
     --dataset.num_episodes=1 \
-    --dataset.root=./datasets \
+    --dataset.root=./datasets/dummy \
     --dataset.repo_id=your_username/franka_vr_test \
     --dataset.single_task="Test VR teleoperation data collection"

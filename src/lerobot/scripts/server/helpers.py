@@ -43,17 +43,171 @@ LeRobotObservation = dict[str, torch.Tensor]
 Observation = dict[str, torch.Tensor]
 
 
-def visualize_action_queue_size(action_queue_size: list[int]) -> None:
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots()
-    ax.set_title("Action Queue Size Over Time")
-    ax.set_xlabel("Environment steps")
-    ax.set_ylabel("Action Queue Size")
-    ax.set_ylim(0, max(action_queue_size) * 1.1)
-    ax.grid(True, alpha=0.3)
-    ax.plot(range(len(action_queue_size)), action_queue_size)
-    plt.show()
+def visualize_action_queue_size(action_queue_size: list[int], inference_times: list[float] = None) -> None:
+    """Display action queue and inference time statistics with optional plots"""
+    if not action_queue_size and not inference_times:
+        print("📊 PERFORMANCE STATS: No data collected")
+        return
+    
+    # Calculate statistics
+    import numpy as np
+    
+    print("\n" + "="*80)
+    print("📊 POLICY DEPLOYMENT PERFORMANCE STATISTICS")
+    print("="*80)
+    
+    # Action queue statistics
+    if action_queue_size:
+        queue_sizes = np.array(action_queue_size)
+        total_steps = len(queue_sizes)
+        avg_size = np.mean(queue_sizes)
+        min_size = np.min(queue_sizes)
+        max_size = np.max(queue_sizes)
+        std_size = np.std(queue_sizes)
+        
+        # Calculate percentage of time queue was empty
+        empty_percentage = (queue_sizes == 0).sum() / total_steps * 100
+        
+        print("🔄 ACTION QUEUE STATISTICS")
+        print("-" * 40)
+        print(f"Total control steps: {total_steps}")
+        print(f"Average queue size: {avg_size:.2f}")
+        print(f"Min queue size: {min_size}")
+        print(f"Max queue size: {max_size}")
+        print(f"Queue size std dev: {std_size:.2f}")
+        print(f"Queue empty {empty_percentage:.1f}% of the time")
+        
+        # Performance assessment
+        if empty_percentage > 50:
+            queue_performance = "🔴 POOR - Queue often empty, inference too slow"
+        elif empty_percentage > 20:
+            queue_performance = "🟡 FAIR - Some queue depletion"
+        elif empty_percentage > 5:
+            queue_performance = "🟢 GOOD - Minimal queue depletion"
+        else:
+            queue_performance = "🟢 EXCELLENT - Queue well maintained"
+        
+        print(f"Queue performance: {queue_performance}")
+        print()
+    
+    # Inference time statistics
+    if inference_times:
+        inference_ms = np.array(inference_times)
+        total_inferences = len(inference_ms)
+        avg_inference = np.mean(inference_ms)
+        min_inference = np.min(inference_ms)
+        max_inference = np.max(inference_ms)
+        std_inference = np.std(inference_ms)
+        p95_inference = np.percentile(inference_ms, 95)
+        
+        # Calculate inference rate (inferences per second)
+        inference_rate = 1000.0 / avg_inference if avg_inference > 0 else 0
+        
+        print("⚡ INFERENCE TIME STATISTICS")
+        print("-" * 40)
+        print(f"Total inferences: {total_inferences}")
+        print(f"Average time: {avg_inference:.1f}ms")
+        print(f"Min time: {min_inference:.1f}ms")
+        print(f"Max time: {max_inference:.1f}ms")
+        print(f"95th percentile: {p95_inference:.1f}ms")
+        print(f"Std deviation: {std_inference:.1f}ms")
+        print(f"Inference rate: {inference_rate:.1f} Hz")
+        
+        # Performance assessment
+        if avg_inference < 50:
+            inference_performance = "🟢 EXCELLENT - Real-time capable"
+        elif avg_inference < 100:
+            inference_performance = "🟡 GOOD - Acceptable for most use cases"
+        elif avg_inference < 200:
+            inference_performance = "🟠 FAIR - May cause some delays"
+        else:
+            inference_performance = "🔴 SLOW - Significant delays expected"
+        
+        print(f"Inference performance: {inference_performance}")
+        print()
+    
+    # Overall assessment
+    if action_queue_size and inference_times:
+        print("🎯 OVERALL ASSESSMENT")
+        print("-" * 40)
+        if "EXCELLENT" in queue_performance and "EXCELLENT" in inference_performance:
+            overall = "🟢 EXCELLENT - Optimal performance"
+        elif "GOOD" in queue_performance or "GOOD" in inference_performance:
+            overall = "🟡 GOOD - Solid performance"
+        elif "FAIR" in queue_performance or "FAIR" in inference_performance:
+            overall = "🟠 FAIR - Acceptable but could be improved"
+        else:
+            overall = "🔴 NEEDS IMPROVEMENT - Performance issues detected"
+        print(f"Overall: {overall}")
+    
+    print("="*80)
+    
+    # Try to generate plots if display is available
+    try:
+        import matplotlib
+        matplotlib.use('Agg')  # Use non-interactive backend
+        import matplotlib.pyplot as plt
+        
+        # Determine number of subplots needed
+        num_plots = 0
+        if action_queue_size:
+            num_plots += 1
+        if inference_times:
+            num_plots += 1
+        
+        if num_plots > 0:
+            fig, axes = plt.subplots(num_plots, 1, figsize=(12, 4 * num_plots))
+            if num_plots == 1:
+                axes = [axes]  # Make it consistent for single plot
+            
+            plot_idx = 0
+            
+            # Action queue size plot
+            if action_queue_size:
+                ax = axes[plot_idx]
+                ax.set_title("Action Queue Size Over Time", fontsize=14, fontweight='bold')
+                ax.set_xlabel("Environment steps")
+                ax.set_ylabel("Queue Size")
+                ax.set_ylim(0, max(queue_sizes) * 1.1 if max(queue_sizes) > 0 else 1)
+                ax.grid(True, alpha=0.3)
+                ax.plot(range(len(queue_sizes)), queue_sizes, linewidth=2, color='blue', label='Queue Size')
+                ax.legend()
+                plot_idx += 1
+            
+            # Inference time plot
+            if inference_times:
+                ax = axes[plot_idx]
+                ax.set_title("Inference Time Over Time", fontsize=14, fontweight='bold')
+                ax.set_xlabel("Inference number")
+                ax.set_ylabel("Inference Time (ms)")
+                ax.grid(True, alpha=0.3)
+                
+                # Plot inference times with moving average
+                ax.plot(range(len(inference_ms)), inference_ms, linewidth=1, alpha=0.7, color='red', label='Inference Time')
+                
+                # Add moving average if we have enough data points
+                if len(inference_ms) >= 10:
+                    window_size = min(10, len(inference_ms) // 4)
+                    moving_avg = np.convolve(inference_ms, np.ones(window_size)/window_size, mode='same')
+                    ax.plot(range(len(moving_avg)), moving_avg, linewidth=3, color='darkred', label=f'Moving Average ({window_size})')
+                
+                # Add horizontal line for average
+                ax.axhline(y=avg_inference, color='orange', linestyle='--', alpha=0.8, label=f'Average ({avg_inference:.1f}ms)')
+                ax.legend()
+            
+            plt.tight_layout()
+            
+            # Save plot to file instead of showing
+            timestamp = int(time.time())
+            plot_filename = f"performance_stats_{timestamp}.png"
+            plt.savefig(plot_filename, dpi=150, bbox_inches='tight')
+            plt.close()
+            print(f"📈 Performance plots saved to: {plot_filename}")
+        
+    except Exception as e:
+        print(f"Note: Could not generate plots ({e})")
+    
+    print()
 
 
 def validate_robot_cameras_for_policy(

@@ -75,6 +75,12 @@ class PolicyServer(services_pb2_grpc.AsyncInferenceServicer):
 
         self.last_processed_obs = None
 
+        # Inference time tracking
+        self.inference_times = []
+        self.inference_times_lock = threading.Lock()
+        self.last_stats_print = time.time()
+        self.stats_print_interval = 5.0  # Print stats every 5 seconds
+
         # Attributes will be set by SendPolicyInstructions
         self.device = None
         self.policy_type = None
@@ -357,10 +363,21 @@ class PolicyServer(services_pb2_grpc.AsyncInferenceServicer):
         postprocessing_time = time.perf_counter() - start_time
         inference_stops = time.perf_counter()
 
+        # Record inference time
+        inference_time_ms = 1000 * (inference_stops - inference_starts)
+        with self.inference_times_lock:
+            self.inference_times.append(inference_time_ms)
+            # Keep only last 100 measurements to avoid memory growth
+            if len(self.inference_times) > 100:
+                self.inference_times.pop(0)
+        
         self.logger.info(
             f"Observation {observation_t.get_timestep()} |"
-            f"Inference time: {1000 * (inference_stops - inference_starts):.2f}ms"
+            f"Inference time: {inference_time_ms:.2f}ms"
         )
+        
+        # Print periodic statistics
+        self._print_periodic_stats()
 
         # full-process latency breakdown for debugging purposes
         self.logger.debug(
@@ -373,8 +390,57 @@ class PolicyServer(services_pb2_grpc.AsyncInferenceServicer):
 
         return action_chunk
 
+    def _print_periodic_stats(self):
+        """Print inference time statistics periodically"""
+        current_time = time.time()
+        if current_time - self.last_stats_print >= self.stats_print_interval:
+            with self.inference_times_lock:
+                if len(self.inference_times) > 0:
+                    import numpy as np
+                    times = np.array(self.inference_times)
+                    avg_time = np.mean(times)
+                    min_time = np.min(times)
+                    max_time = np.max(times)
+                    std_time = np.std(times)
+                    
+                    # Calculate inference rate (inferences per second)
+                    inference_rate = 1000.0 / avg_time if avg_time > 0 else 0
+                    
+                    self.logger.info(
+                        f"📊 INFERENCE STATS (last {len(self.inference_times)} inferences) | "
+                        f"Avg: {avg_time:.1f}ms | Min: {min_time:.1f}ms | Max: {max_time:.1f}ms | "
+                        f"Std: {std_time:.1f}ms | Rate: {inference_rate:.1f} Hz"
+                    )
+                    
+                    # Performance assessment
+                    if avg_time < 50:
+                        perf_status = "🟢 EXCELLENT"
+                    elif avg_time < 100:
+                        perf_status = "🟡 GOOD"
+                    elif avg_time < 200:
+                        perf_status = "🟠 ACCEPTABLE"
+                    else:
+                        perf_status = "🔴 SLOW"
+                    
+                    self.logger.info(f"⚡ Performance: {perf_status} (target: <50ms for real-time)")
+            
+            self.last_stats_print = current_time
+
     def stop(self):
         """Stop the server"""
+        # Print final statistics
+        with self.inference_times_lock:
+            if len(self.inference_times) > 0:
+                import numpy as np
+                times = np.array(self.inference_times)
+                avg_time = np.mean(times)
+                total_inferences = len(times)
+                
+                self.logger.info(
+                    f"🏁 FINAL STATS | Total inferences: {total_inferences} | "
+                    f"Average time: {avg_time:.1f}ms | Policy type: {self.policy_type}"
+                )
+        
         self._reset_server()
         self.logger.info("Server stopping...")
 
