@@ -5,6 +5,7 @@ from lerobot.cameras.utils import CameraConfig
 from lerobot.robots.config import RobotConfig
 
 
+@RobotConfig.register_subclass("xhand")
 @dataclass
 class XHandConfig(RobotConfig):
     """Configuration for XHand robot with 12 DOF"""

@@ -27,4 +27,5 @@ from . import (  # noqa: F401
     so100_leader,
     so101_leader,
     vr_teleoperator,
+    xhand_vr,
 )

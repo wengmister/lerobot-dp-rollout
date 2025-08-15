@@ -69,5 +69,9 @@ def make_teleoperator_from_config(config: TeleoperatorConfig) -> Teleoperator:
         from .vr_teleoperator import VRTeleoperator
 
         return VRTeleoperator(config)
+    elif config.type == "xhand_vr":
+        from .xhand_vr import XHandVRTeleoperator
+
+        return XHandVRTeleoperator(config)
     else:
         raise ValueError(config.type)
