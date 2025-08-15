@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "pybind11>=2.6.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vr_ik_bridge"
+version = "0.1.0"
+description = "VR IK Bridge for Franka teleoperation with LeRobot"
+authors = [{name = "LeRobot Team"}]
+requires-python = ">=3.7"
+dependencies = [
+    "pybind11>=2.6.0",
+    "numpy",
+]
+
+[tool.setuptools]
+packages = []

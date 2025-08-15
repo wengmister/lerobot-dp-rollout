@@ -79,6 +79,10 @@ class VRTeleoperator(Teleoperator):
         action = teleop.get_action()
     """
     
+    # Set class attributes required by Teleoperator
+    config_class = VRTeleoperatorConfig
+    name = "vr"
+    
     def __init__(self, config: VRTeleoperatorConfig):
         super().__init__(config)
         self.config = config
@@ -390,10 +394,6 @@ class VRTeleoperator(Teleoperator):
         """VR teleoperator doesn't support feedback"""
         pass
 
-
-# Set class attributes required by Teleoperator
-VRTeleoperator.config_class = VRTeleoperatorConfig
-VRTeleoperator.name = "vr"
 
 # Register the teleoperator
 TeleoperatorConfig.register_subclass("vr", VRTeleoperatorConfig)
