@@ -175,3 +175,5 @@ outputs/
 .cache/*
 
 # example data dir
+
+.claude

@@ -1,5 +1,4 @@
 import logging
-import sys
 import time
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -42,17 +41,19 @@ class XHandVRTeleoperator(Teleoperator):
         # Set up joint mapping from retargeting output to XHand joint order
         self._setup_joint_mapping()
         
-        # Initialize VR hand detector
+        # Initialize VR hand detector adapter
         try:
-            # Add dex_retargeting example path to sys.path
-            dex_example_path = Path(__file__).parent.parent.parent.parent.parent / "dex_retargeting" / "example" / "vector_retargeting"
-            sys.path.insert(0, str(dex_example_path))
-            
-            from vr_hand_detector import VRHandDetector
+            from .vr_hand_detector_adapter import VRHandDetectorAdapter
             hand_type_str = "Right" if config.hand_type == config.hand_type.right else "Left"
-            self.detector = VRHandDetector(hand_type=hand_type_str, robot_name=str(config.robot_name), use_tcp=True)
+            self.detector = VRHandDetectorAdapter(
+                hand_type=hand_type_str, 
+                robot_name=str(config.robot_name), 
+                use_tcp=True,
+                tcp_port=config.vr_tcp_port,
+                verbose=config.vr_verbose
+            )
         except ImportError as e:
-            logger.error(f"VRHandDetector not available: {e}. Please install required VR dependencies.")
+            logger.error(f"VRHandDetectorAdapter not available: {e}. Please build the VR message router.")
             self.detector = None
         
         # Control settings
@@ -127,7 +128,7 @@ class XHandVRTeleoperator(Teleoperator):
         
         try:
             # Detect hand pose
-            _, joint_pos, keypoint_2d, _ = self.detector.detect()
+            _, joint_pos, _, _ = self.detector.detect()
             
             if joint_pos is None:
                 # Return previous action or home position if no hand detected

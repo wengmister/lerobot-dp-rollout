@@ -20,3 +20,7 @@ class XHandVRTeleoperatorConfig(TeleoperatorConfig):
     
     # Robot directory for URDF files (optional, will use default if None)
     robot_dir: str | None = None
+    
+    # VR message router settings
+    vr_tcp_port: int = 8000  # TCP port for VR message router
+    vr_verbose: bool = False  # Enable verbose VR logging
