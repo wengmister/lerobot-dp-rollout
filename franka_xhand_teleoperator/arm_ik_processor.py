@@ -37,6 +37,7 @@ class ArmIKProcessor:
         self.config = config or {}
         self.verbose = self.config.get('verbose', False)
         self.smoothing_factor = self.config.get('smoothing_factor', 0.7)
+        self.movement_scale = self.config.get('movement_scale', 2.0)  # Scale VR movements by 2x
         
         # IK solver instance (will be created in setup)
         self.ik_solver = None
@@ -120,11 +121,26 @@ class ArmIKProcessor:
                 logger.debug("Invalid wrist data, returning current joints")
             return {f"arm_joint_{i}.pos": float(current_joints[i]) for i in range(7)}
         
+        # Check if VR is initialized, if not, handle initialization
+        if not self.vr_initialized:
+            # Initialize VR (this will be done in _compute_target_pose)
+            # For first frame, return current joints to avoid big jump
+            try:
+                self._compute_target_pose(wrist_data, current_joints)  # This will initialize VR
+            except:
+                pass  # Ignore any return from initialization
+            return {f"arm_joint_{i}.pos": float(current_joints[i]) for i in range(7)}
+        
         try:
             # Convert VR wrist pose to target pose relative to initial robot pose
             start_time = time.perf_counter()
-            target_position, target_orientation = self._compute_target_pose(wrist_data)
+            target_position, target_orientation = self._compute_target_pose(wrist_data, current_joints)
             pose_compute_time = time.perf_counter() - start_time
+            
+            # Debug: Log IK solver inputs
+            if self.verbose:
+                logger.info(f"IK SOLVER INPUT - target_pos: {target_position}")
+                logger.info(f"IK SOLVER INPUT - current_joints: {[f'{j:.3f}' for j in current_joints]}")
             
             # Solve IK using WeightedIKSolver
             ik_start_time = time.perf_counter()
@@ -169,7 +185,7 @@ class ArmIKProcessor:
             # Return current joints as safe fallback
             return {f"arm_joint_{i}.pos": float(current_joints[i]) for i in range(7)}
     
-    def _compute_target_pose(self, wrist_data):
+    def _compute_target_pose(self, wrist_data, current_joints):
         """
         Convert VR wrist data to target pose using differential approach
         
@@ -199,13 +215,24 @@ class ArmIKProcessor:
                 'quaternion': robot_quaternion # Store robot-frame quaternion [x, y, z, w]
             }
             self.vr_initialized = True
-            if self.verbose:
-                logger.info(f"VR initialized at robot position: {robot_position}")
-            # For first frame, return current joints to avoid big jump  
-            return {f"arm_joint_{i}.pos": float(current_joints[i]) for i in range(7)}
+            logger.info(f"VR INITIALIZED at robot position: {robot_position}")
+            # Return zero delta for initialization frame
+            target_position = self.initial_robot_pose.flatten()[12:15]  # Current robot position [12,13,14]
+            target_rotation_matrix = self.initial_robot_pose[:3, :3]  # Current robot orientation
+            return target_position.tolist(), target_rotation_matrix.flatten().tolist()
+        
+        # Debug: Confirm we're past initialization
+        if self.verbose:
+            logger.debug(f"VR processing (initialized): current={robot_position}, initial={self.initial_vr_pose['position']}")
         
         # Calculate delta in robot frame (like original line 239-243)
         robot_pos_delta = robot_position - self.initial_vr_pose['position']
+        
+        # Debug: Print delta calculation
+        if self.verbose:
+            logger.info(f"VR current: {robot_position}")
+            logger.info(f"VR initial: {self.initial_vr_pose['position']}")
+            logger.info(f"Robot delta: {robot_pos_delta} (norm: {np.linalg.norm(robot_pos_delta):.4f}m)")
         
         # Apply workspace limits (75cm max offset)
         max_offset = 0.75
@@ -213,17 +240,15 @@ class ArmIKProcessor:
             robot_pos_delta = robot_pos_delta / np.linalg.norm(robot_pos_delta) * max_offset
         
         # Calculate target position: initial robot + robot delta
-        # Note: FrankaFER stores pose in row-major, translation is in bottom row
-        initial_robot_translation = self.initial_robot_pose[3, :3]  # Extract translation from 4x4 matrix
+        # Note: FrankaFER stores pose in row-major format as 16-element array
+        # The 4x4 transformation matrix in row-major has translation at indices [12,13,14]
+        initial_robot_translation = self.initial_robot_pose.flatten()[12:15]  # Extract translation [12,13,14]
         target_position = initial_robot_translation + robot_pos_delta
         
-        # Safety check: detect unreasonable targets
-        if np.linalg.norm(robot_pos_delta) > 0.1:  # More than 10cm movement
-            if self.verbose:
-                logger.warning(f"Large robot delta detected: {np.linalg.norm(robot_pos_delta):.3f}m")
-            # For large movements, gradually move towards target to avoid big jumps
-            robot_pos_delta = robot_pos_delta * 0.1  # Move only 10% of the way
-            target_position = initial_robot_translation + robot_pos_delta
+        # Debug: Always log the final delta being applied
+        delta_norm = np.linalg.norm(robot_pos_delta)
+        if self.verbose:
+            logger.info(f"FINAL robot delta applied: {robot_pos_delta} (norm: {delta_norm:.4f}m)")
         
         # Calculate orientation delta (in robot frame, like original)
         initial_robot_quat_xyzw = self.initial_vr_pose['quaternion']  # [x, y, z, w] in robot frame

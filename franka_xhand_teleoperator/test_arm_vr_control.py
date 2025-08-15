@@ -37,15 +37,15 @@ def test_vr_arm_control():
         config = vr_message_router.VRRouterConfig()
         config.tcp_port = 8000
         config.verbose = False  # Reduce verbosity
-        config.message_timeout_ms = 100.0
+        config.message_timeout_ms = 200.0  # Increase timeout
         
         router = vr_message_router.VRMessageRouter(config)
         print("VR message router created")
         
         # Initialize arm IK processor
         ik_config = {
-            'verbose': False,  # Reduce verbosity
-            'smoothing_factor': 0.8
+            'verbose': True,  # Enable for debugging translation issues
+            'smoothing_factor': 0.3  # Reduced from 0.8 for more responsive movement
         }
         
         arm_processor = ArmIKProcessor(ik_config)
@@ -57,6 +57,13 @@ def test_vr_arm_control():
         robot = FrankaFER(robot_config)
         robot.connect()
         print("Connected to Franka robot")
+        
+        # Home robot to neutral position
+        print("Homing robot to neutral position...")
+        home_action = {f"joint_{i}.pos": robot_config.home_position[i] for i in range(7)}
+        robot.send_action(home_action)
+        time.sleep(2.0)  # Wait for robot to reach home position
+        print("Robot homed")
         
         # Get current robot state
         current_obs = robot.get_observation()
@@ -139,6 +146,19 @@ def test_vr_arm_control():
                         
                         print(f"VR pos: ({wrist.position[0]:.3f}, {wrist.position[1]:.3f}, {wrist.position[2]:.3f}) "
                               f"| Max joint diff: {max_diff:.3f} rad ({np.degrees(max_diff):.1f}°)")
+                        
+                        # Store the first VR position to track if it changes
+                        if not hasattr(test_vr_arm_control, 'first_vr_pos'):
+                            test_vr_arm_control.first_vr_pos = wrist.position.copy()
+                            print(f"  STORED first VR position: {test_vr_arm_control.first_vr_pos}")
+                        else:
+                            # Check if VR position has changed significantly
+                            pos_diff = [abs(wrist.position[i] - test_vr_arm_control.first_vr_pos[i]) for i in range(3)]
+                            max_pos_diff = max(pos_diff)
+                            if max_pos_diff > 0.05:  # 5cm change
+                                print(f"  VR MOVED! Diff from start: {pos_diff} (max: {max_pos_diff:.3f}m)")
+                            else:
+                                print(f"  VR barely moved: max diff = {max_pos_diff:.4f}m")
                     
                     elif status['tcp_connected']:
                         print("VR connected but no valid wrist data")
