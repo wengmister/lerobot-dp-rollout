@@ -302,8 +302,16 @@ class XHand(Robot):
             error_struct = self._device.send_command(self._hand_id, self._hand_command)
             
             if error_struct.error_code != 0:
-                logger.warning(f"Failed to send XHand command: {error_struct.error_message}")
-                return False
+                # Ignore known hardware sensor errors that don't affect movement
+                ignored_errors = [
+                    "Sensor fails to read the combined force",
+                    "Sensor fails to read the distributed force", 
+                    "Sensor fails to read temperature"
+                ]
+                
+                if not any(ignored_error in error_struct.error_message for ignored_error in ignored_errors):
+                    logger.warning(f"Failed to send XHand command: {error_struct.error_message}")
+                    return False
             
             return True
             
