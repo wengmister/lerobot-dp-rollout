@@ -51,7 +51,8 @@ class FrankaFER(Robot):
             features[f"joint_{i}.vel"] = float
             
         # End-effector pose (16-element affine transformation matrix, row-major)
-        features["ee_pose"] = (16,)
+        for i in range(16):
+            features[f"ee_pose.{i:02d}"] = float
             
         # Add camera features if any
         for cam_name, cam_config in self.config.cameras.items():
@@ -202,12 +203,16 @@ class FrankaFER(Robot):
                 for i, vel in enumerate(velocities):
                     obs_dict[f"joint_{i}.vel"] = float(vel)
             
-            # Add end-effector pose if available (keep as 16-element flat array)
+            # Add end-effector pose if available (as individual float features)
             if robot_state["ee_pose"] is not None:
-                obs_dict["ee_pose"] = robot_state["ee_pose"].tolist()  # Convert to list for JSON serialization
+                ee_pose_flat = robot_state["ee_pose"]
+                for i, value in enumerate(ee_pose_flat):
+                    obs_dict[f"ee_pose.{i:02d}"] = float(value)
             else:
                 # Fallback: identity matrix flattened if ee_pose not available from robot server
-                obs_dict["ee_pose"] = np.eye(4).flatten().tolist()
+                identity_flat = np.eye(4).flatten()
+                for i, value in enumerate(identity_flat):
+                    obs_dict[f"ee_pose.{i:02d}"] = float(value)
                 logger.warning("End-effector pose not available from robot server, using identity matrix")
                 
         dt_ms = (time.perf_counter() - start) * 1e3
