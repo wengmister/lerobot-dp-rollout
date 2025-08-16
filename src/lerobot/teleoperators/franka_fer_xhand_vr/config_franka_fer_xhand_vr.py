@@ -2,9 +2,9 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from lerobot.teleoperators.config import TeleoperatorConfig
-from dex_retargeting.constants import RobotName, RetargetingType, HandType
 
 
+@TeleoperatorConfig.register_subclass("franka_fer_xhand_vr")
 @dataclass
 class FrankaFERXHandVRTeleoperatorConfig(TeleoperatorConfig):
     """Configuration for dual VR teleoperator controlling FrankaFER arm + XHand."""
@@ -24,9 +24,9 @@ class FrankaFERXHandVRTeleoperatorConfig(TeleoperatorConfig):
     q7_max: float = 2.8973
     
     # Hand VR teleoperator settings
-    hand_robot_name: RobotName = RobotName.xhand
-    hand_retargeting_type: RetargetingType = RetargetingType.dexpilot
-    hand_type: HandType = HandType.right
+    hand_robot_name: str = "xhand_right"
+    hand_retargeting_type: str = "vector"
+    hand_type: str = "right"
     hand_control_frequency: float = 30.0
     hand_smoothing_alpha: float = 0.3
     

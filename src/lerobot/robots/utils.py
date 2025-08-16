@@ -69,6 +69,10 @@ def make_robot_from_config(config: RobotConfig) -> Robot:
         from .xhand import XHand
 
         return XHand(config)
+    elif config.type == "franka_fer_xhand":
+        from .franka_fer_xhand import FrankaFERXHand
+
+        return FrankaFERXHand(config)
     elif config.type == "mock_robot":
         from tests.mocks.mock_robot import MockRobot
 

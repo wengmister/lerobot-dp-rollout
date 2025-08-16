@@ -7,6 +7,7 @@ from lerobot.robots.franka_fer.franka_fer_config import FrankaFERConfig
 from lerobot.robots.xhand.xhand_config import XHandConfig
 
 
+@RobotConfig.register_subclass("franka_fer_xhand")
 @dataclass
 class FrankaFERXHandConfig(RobotConfig):
     """Configuration for combined Franka FER arm + XHand robot"""

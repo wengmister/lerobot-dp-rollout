@@ -80,6 +80,7 @@ from lerobot.robots import (  # noqa: F401
     Robot,
     RobotConfig,
     bi_so100_follower,
+    franka_fer_xhand,
     franka_fer,
     xhand,
     hope_jr,
@@ -92,12 +93,14 @@ from lerobot.teleoperators import (  # noqa: F401
     Teleoperator,
     TeleoperatorConfig,
     bi_so100_leader,
+    franka_fer_vr,
+    franka_fer_xhand_vr,
     homunculus,
     koch_leader,
     make_teleoperator_from_config,
     so100_leader,
     so101_leader,
-    vr_teleoperator,
+    xhand_vr,
 )
 from lerobot.teleoperators.keyboard.teleop_keyboard import KeyboardTeleop
 from lerobot.utils.control_utils import (

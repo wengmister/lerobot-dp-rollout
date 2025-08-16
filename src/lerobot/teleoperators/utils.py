@@ -73,5 +73,13 @@ def make_teleoperator_from_config(config: TeleoperatorConfig) -> Teleoperator:
         from .xhand_vr import XHandVRTeleoperator
 
         return XHandVRTeleoperator(config)
+    elif config.type == "franka_fer_vr":
+        from .franka_fer_vr import FrankaFERVRTeleoperator
+
+        return FrankaFERVRTeleoperator(config)
+    elif config.type == "franka_fer_xhand_vr":
+        from .franka_fer_xhand_vr import FrankaFERXHandVRTeleoperator
+
+        return FrankaFERXHandVRTeleoperator(config)
     else:
         raise ValueError(config.type)

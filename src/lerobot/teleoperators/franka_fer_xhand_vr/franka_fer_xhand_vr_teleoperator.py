@@ -65,11 +65,35 @@ class FrankaFERXHandVRTeleoperator(Teleoperator):
         )
         self.arm_teleop = FrankaFERVRTeleoperator(arm_config)
         
-        # Create hand VR teleoperator
+        # Create hand VR teleoperator - convert string constants to enums
+        from dex_retargeting.constants import RobotName, RetargetingType, HandType
+        
+        # Convert string robot name to enum
+        robot_name_map = {
+            "xhand_left": RobotName.xhand,
+            "xhand_right": RobotName.xhand,
+            "xhand": RobotName.xhand
+        }
+        robot_name_enum = robot_name_map.get(config.hand_robot_name, RobotName.xhand)
+        
+        # Convert string retargeting type to enum
+        retargeting_map = {
+            "vector": RetargetingType.vector,
+            "dexpilot": RetargetingType.dexpilot
+        }
+        retargeting_enum = retargeting_map.get(config.hand_retargeting_type, RetargetingType.vector)
+        
+        # Convert string hand type to enum
+        hand_type_map = {
+            "left": HandType.left,
+            "right": HandType.right
+        }
+        hand_type_enum = hand_type_map.get(config.hand_type, HandType.right)
+        
         hand_config = XHandVRTeleoperatorConfig(
-            robot_name=config.hand_robot_name,
-            retargeting_type=config.hand_retargeting_type,
-            hand_type=config.hand_type,
+            robot_name=robot_name_enum,
+            retargeting_type=retargeting_enum,
+            hand_type=hand_type_enum,
             vr_tcp_port=config.vr_tcp_port,  # Same port - shared VR
             setup_adb=False,  # Arm teleop handles ADB setup
             vr_verbose=config.vr_verbose,
