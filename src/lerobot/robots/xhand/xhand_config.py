@@ -29,7 +29,7 @@ class XHandConfig(RobotConfig):
     max_torque: float = 250.0  # Maximum torque per joint (mA) - from examples
     
     # Control settings
-    control_frequency: float = 100.0  # Hz
+    control_frequency: float = 30.0  # Hz
     timeout: float = 1.0  # Communication timeout in seconds
     
     # Home position (12 joint angles in degrees, converted to radians in code)

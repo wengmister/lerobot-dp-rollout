@@ -19,7 +19,7 @@ class VRRouterConfig:
     """Configuration for shared VR router."""
     tcp_port: int = 8000
     verbose: bool = False
-    message_timeout_ms: float = 200.0
+    message_timeout_ms: float = 1000.0  # Increased from 200ms to handle VR app periodic delays
     setup_adb: bool = True
 
 

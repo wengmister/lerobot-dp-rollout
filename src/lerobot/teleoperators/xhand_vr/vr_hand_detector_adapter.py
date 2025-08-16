@@ -218,28 +218,10 @@ class VRHandDetectorAdapter:
             if self.verbose:
                 logger.debug(f"Detected hand landmarks: {joint_pos.shape}")
 
-            # Apply same transformations as original VRHandDetector
-            keypoint_3d_array = joint_pos.copy()  # Fix: use joint_pos not landmarks
-            
-            # Scale to match MediaPipe coordinate range (from original)
-            keypoint_3d_array *= 1.05
-            
-            # Convert coordinate system for right hand (from original)
-            if self.hand_type == "Right":
-                keypoint_3d_array[:, 0] = -keypoint_3d_array[:, 0]
-            
-            # Make wrist the origin (same as MediaPipe processing)
-            keypoint_3d_array = keypoint_3d_array - keypoint_3d_array[0:1, :]
-
-            # Estimate hand orientation using the shifted array
-            wrist_rot = self.estimate_frame_from_hand_points(keypoint_3d_array)  # Fix: use self and correct input
-
-            # Transform to MANO coordinate system
-            joint_pos = keypoint_3d_array @ wrist_rot @ self.operator2mano
-            
-            # Apply robot-specific retargeting if specified
-            if self.robot_name and "xhand" in self.robot_name:
-                joint_pos = adaptive_retargeting_xhand(joint_pos)
+            # Use consolidated processing method
+            joint_pos = self._process_landmarks_internal(joint_pos)
+            if joint_pos is None:
+                return None, None, None, None
              
             # Return in VRHandDetector format: (None, joint_pos, keypoint_2d, None)
             # keypoint_2d is set to None since retargeting only uses joint_pos
@@ -382,11 +364,22 @@ class VRHandDetectorAdapter:
             
             # DEBUG: Print raw VR input
             if self.verbose:
-                print(f"  RAW VR LANDMARKS INPUT:")
+                import time
+                timestamp = time.time()
+                print(f"  RAW VR LANDMARKS INPUT at {timestamp:.3f}:")
                 print(f"  Shape: {joint_pos.shape}")
                 print(f"  First 3 landmarks: {joint_pos[:3]}")
                 print(f"  Wrist (landmark 0): {joint_pos[0]}")
                 print(f"  Index tip (landmark 8): {joint_pos[8] if len(joint_pos) > 8 else 'N/A'}")
+                
+                # Check for suspicious landmark patterns that might indicate VR data corruption
+                wrist_pos = joint_pos[0]
+                if np.allclose(wrist_pos, [0, 0, 0], atol=1e-6):
+                    logger.warning(f"VR LANDMARKS: Wrist at origin at {timestamp:.3f} - possible data corruption")
+                
+                # Check if all landmarks are the same (another corruption indicator)
+                if len(np.unique(joint_pos.reshape(-1, 3), axis=0)) < 5:
+                    logger.warning(f"VR LANDMARKS: Too few unique positions at {timestamp:.3f} - possible data corruption")
             
             # Apply the same processing logic as in detect() method
             # (Copy the landmark processing logic from detect() method)
@@ -396,7 +389,22 @@ class VRHandDetectorAdapter:
                     logger.warning(f"Expected 21 landmarks, got {joint_pos.shape[0]}")
                 return None
             
-            # Apply EXACT same transformations as original detect() method
+            # Use consolidated processing method (same as detect())
+            return self._process_landmarks_internal(joint_pos)
+            
+        except Exception as e:
+            if self.verbose:
+                logger.error(f"Error processing external landmarks data: {e}")
+            return None
+    
+    def _process_landmarks_internal(self, joint_pos: np.ndarray) -> Optional[np.ndarray]:
+        """
+        Consolidated landmark processing method used by both detect() and process_landmarks_data().
+        
+        This eliminates code duplication and ensures identical processing in both legacy and new modes.
+        """
+        try:
+            # Apply same transformations as original VRHandDetector
             keypoint_3d_array = joint_pos.copy()
             
             # Scale to match MediaPipe coordinate range (from original)
@@ -406,13 +414,13 @@ class VRHandDetectorAdapter:
             if self.hand_type == "Right":
                 keypoint_3d_array[:, 0] = -keypoint_3d_array[:, 0]
             
-            # Make wrist the origin (same as MediaPipe processing) - EXACT SAME AS ORIGINAL
+            # Make wrist the origin (same as MediaPipe processing)
             keypoint_3d_array = keypoint_3d_array - keypoint_3d_array[0:1, :]
 
-            # Estimate hand orientation using the shifted array - EXACT SAME AS ORIGINAL
+            # Estimate hand orientation using the shifted array
             wrist_rot = self.estimate_frame_from_hand_points(keypoint_3d_array)
-            
-            # Transform to MANO coordinate system - EXACT SAME AS ORIGINAL
+
+            # Transform to MANO coordinate system
             joint_pos = keypoint_3d_array @ wrist_rot @ self.operator2mano
             
             # Apply robot-specific adaptive retargeting
@@ -423,7 +431,7 @@ class VRHandDetectorAdapter:
             
         except Exception as e:
             if self.verbose:
-                logger.error(f"Error processing external landmarks data: {e}")
+                logger.error(f"Error in consolidated landmark processing: {e}")
             return None
     
     def __del__(self):

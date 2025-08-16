@@ -119,7 +119,7 @@ class XHandVRTeleoperator(Teleoperator):
         vr_config = VRRouterConfig(
             tcp_port=self.config.vr_tcp_port,
             verbose=self.config.vr_verbose,
-            message_timeout_ms=100.0,
+            message_timeout_ms=1000.0,  # Increased to handle VR app periodic delays
             setup_adb=self.config.setup_adb
         )
         
@@ -179,6 +179,10 @@ class XHandVRTeleoperator(Teleoperator):
             
             if not status.get('tcp_connected', False) or landmarks_data is None:
                 # No valid VR data, return previous action or home position
+                import time
+                timestamp = time.time()
+                logger.warning(f"VR DATA LOSS at {timestamp:.3f}: tcp_connected={status.get('tcp_connected', False)}, landmarks_data={landmarks_data is not None}")
+                
                 if self.last_joint_positions is not None:
                     action = self._convert_to_xhand_action(self.last_joint_positions)
                     logger.debug("No VR data - using last joint positions")
@@ -186,7 +190,7 @@ class XHandVRTeleoperator(Teleoperator):
                 else:
                     # Return home position (open hand)
                     action = {f"joint_{i}.pos": 0.0 for i in range(12)}
-                    logger.debug("No VR data - returning home position (all joints 0.0)")
+                    logger.warning(f"VR DATA LOSS - returning home position at {timestamp:.3f}")
                     return action
             
             # Process landmarks data through detector
@@ -194,10 +198,15 @@ class XHandVRTeleoperator(Teleoperator):
             
             if joint_pos is None:
                 # Processing failed, return previous action or home position
+                import time
+                timestamp = time.time()
+                logger.warning(f"LANDMARK PROCESSING FAILED at {timestamp:.3f}")
+                
                 if self.last_joint_positions is not None:
                     return self._convert_to_xhand_action(self.last_joint_positions)
                 else:
                     # Return home position
+                    logger.warning(f"LANDMARK PROCESSING FAILED - returning home position at {timestamp:.3f}")
                     return {f"joint_{i}.pos": 0.0 for i in range(12)}
             
             # Retarget to robot joint positions
@@ -216,7 +225,17 @@ class XHandVRTeleoperator(Teleoperator):
             
             # Apply smoothing if we have previous positions
             if self.last_joint_positions is not None:
+                qpos_before_smooth = qpos.copy()
                 qpos = self._apply_smoothing(qpos, self.last_joint_positions)
+                
+                # Log if there's a big change (potential twitch)
+                max_change = np.max(np.abs(qpos - self.last_joint_positions))
+                if max_change > 0.5:  # > 28 degrees change
+                    import time
+                    logger.warning(f"LARGE JOINT CHANGE at {time.time():.3f}: max_change={max_change:.3f} rad ({np.degrees(max_change):.1f}°)")
+                    logger.warning(f"  Before smooth: {[f'{np.degrees(a):.1f}' for a in qpos_before_smooth[:5]]}")
+                    logger.warning(f"  After smooth:  {[f'{np.degrees(a):.1f}' for a in qpos[:5]]}")
+                    logger.warning(f"  Previous:      {[f'{np.degrees(a):.1f}' for a in self.last_joint_positions[:5]]}")
             
             self.last_joint_positions = qpos.copy()
             
@@ -225,8 +244,11 @@ class XHandVRTeleoperator(Teleoperator):
             
             # Convert to XHand action format
             action = self._convert_to_xhand_action(xhand_joint_positions)
+            
+            # Enhanced logging
             if self.config.vr_verbose:
                 logger.debug(f"Final hand action angles (degrees): {[f'{np.degrees(action[f"joint_{i}.pos"]):.1f}' for i in range(12)]}")
+            
             return action
             
         except ValueError as e:
