@@ -81,7 +81,7 @@ class FrankaFERXHandVRTeleoperator(Teleoperator):
             "vector": RetargetingType.vector,
             "dexpilot": RetargetingType.dexpilot
         }
-        retargeting_enum = retargeting_map.get(config.hand_retargeting_type, RetargetingType.vector)
+        retargeting_enum = retargeting_map.get(config.hand_retargeting_type, RetargetingType.dexpilot)
         
         # Convert string hand type to enum
         hand_type_map = {

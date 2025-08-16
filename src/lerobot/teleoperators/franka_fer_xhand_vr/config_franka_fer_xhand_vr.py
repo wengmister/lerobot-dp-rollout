@@ -25,7 +25,7 @@ class FrankaFERXHandVRTeleoperatorConfig(TeleoperatorConfig):
     
     # Hand VR teleoperator settings
     hand_robot_name: str = "xhand_right"
-    hand_retargeting_type: str = "vector"
+    hand_retargeting_type: str = "dexpilot"
     hand_type: str = "right"
     hand_control_frequency: float = 30.0
     hand_smoothing_alpha: float = 0.3
