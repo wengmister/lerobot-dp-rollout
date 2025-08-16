@@ -29,7 +29,7 @@ from lerobot.cameras.configs import ColorMode
 # Default recording parameters
 DEFAULT_NUM_EPISODES = 2
 DEFAULT_FPS = 30
-DEFAULT_EPISODE_TIME_SEC = 20
+DEFAULT_EPISODE_TIME_SEC = 30
 DEFAULT_TASK_DESCRIPTION = "Teleoperate dual arm-hand system to pick and place objects"
 DEFAULT_DATASET_NAME = "test_pick_and_place"
 
@@ -106,7 +106,7 @@ def main():
             color_mode=ColorMode.RGB
         ),
         "wrist": OpenCVCameraConfig(
-            index_or_path="/dev/video6",
+            index_or_path="/dev/video12",
             fps=30,
             width=424,
             height=240,
@@ -252,7 +252,13 @@ def main():
             time.sleep(1.0)  # Extra safety pause
             
             print("3. Ready for episode")
-            input(f"Press ENTER to start recording episode {current_episode} (or Ctrl+C to stop)...")
+            print("="*60)
+            print(f">>> Press ENTER to start recording episode {current_episode} <<<")
+            print(f">>> Or press Ctrl+C to stop recording <<<")
+            print("="*60)
+            import sys
+            sys.stdout.flush()  # Ensure prompt is displayed
+            input("Waiting for your confirmation: ")
             
             print("4. Connecting/reconnecting teleoperation...")
             if not teleop.is_connected:
@@ -305,7 +311,9 @@ def main():
             # Disconnect teleoperator after each episode for proper cleanup
             if teleop.is_connected:
                 teleop.disconnect()
-                print(f"Episode {recorded_episodes} complete - teleoperator disconnected")
+                print(f"\n{'='*60}")
+                print(f"Episode {recorded_episodes} COMPLETE - teleoperator disconnected")
+                print(f"{'='*60}\n")
             
             # Final completion message
             if recorded_episodes >= total_episodes_to_record:
