@@ -27,7 +27,7 @@ from dex_retargeting.constants import RobotName, RetargetingType, HandType
 from lerobot.teleoperators.vr_router_manager import get_vr_router_manager
 
 
-def test_dual_vr_control(use_stub=True):
+def test_dual_vr_control(use_stub=False):
     """
     Test dual arm+hand VR control using shared VR router manager.
     
@@ -54,11 +54,7 @@ def test_dual_vr_control(use_stub=True):
         arm_config = FrankaFERConfig()
         arm_robot = FrankaFER(arm_config)
         
-        if use_stub:
-            print("  Using stub mode for arm robot")
-            # arm_robot._connect_stub()  # If this method exists
-        else:
-            arm_robot.connect()
+        arm_robot.connect()
         print("  ✅ Arm robot connected")
         
         # Initialize arm teleoperator
@@ -83,11 +79,7 @@ def test_dual_vr_control(use_stub=True):
         )
         hand_robot = XHand(hand_config)
         
-        if use_stub:
-            print("  Using stub mode for hand robot")
-            hand_robot._connect_stub()
-        else:
-            hand_robot.connect(calibrate=True)
+        hand_robot.connect(calibrate=True)
         print("  ✅ Hand robot connected")
         
         # Initialize hand teleoperator
@@ -226,5 +218,5 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    success = test_dual_vr_control(use_stub=not args.hardware)
+    success = test_dual_vr_control(use_stub=False)
     sys.exit(0 if success else 1)
