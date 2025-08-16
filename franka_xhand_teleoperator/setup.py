@@ -1,10 +1,9 @@
-from setuptools import setup, Extension
+from setuptools import setup
 import subprocess
 import sys
 import os
 
 from pybind11.setup_helpers import Pybind11Extension, build_ext
-from pybind11 import get_cmake_dir
 import pybind11
 
 # Check if Eigen3 is available
@@ -35,31 +34,47 @@ def find_eigen():
     print("Warning: Eigen3 not found in common locations")
     return []
 
-# Define the extension module
+# Common include directories
+common_include_dirs = [
+    pybind11.get_include(),
+    "include/",
+    *find_eigen()
+]
+
+# Common source files
+common_sources = [
+    "src/weighted_ik.cpp", 
+    "src/geofik.cpp"
+]
+
+# Define the extension modules
 ext_modules = [
+    # Weighted IK Bridge module
     Pybind11Extension(
-        "vr_ik_bridge",
+        "weighted_ik_bridge",
         [
-            "vr_ik_bridge.cpp",
-            "src/weighted_ik.cpp", 
-            "src/geofik.cpp"
+            "src/weighted_ik_bridge.cpp",
+            *common_sources
         ],
-        include_dirs=[
-            # Path to pybind11 headers
-            pybind11.get_include(),
-            # Local include directory
-            "include/",
-            # Eigen3 include directories
-            *find_eigen()
+        include_dirs=common_include_dirs,
+        language='c++'
+    ),
+    
+    # VR Message Router module
+    Pybind11Extension(
+        "vr_message_router",
+        [
+            "src/vr_message_router.cpp"
         ],
+        include_dirs=common_include_dirs,
         language='c++'
     ),
 ]
 
 setup(
-    name="vr_ik_bridge",
+    name="franka_xhand_teleoperator",
     version="0.1.0",
-    description="VR IK Bridge for Franka teleoperation with LeRobot",
+    description="Franka XHand Teleoperator with VR support for LeRobot",
     author="LeRobot Team",
     ext_modules=ext_modules,
     cmdclass={"build_ext": build_ext},

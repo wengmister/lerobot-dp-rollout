@@ -9,6 +9,8 @@ from dex_retargeting.retargeting_config import RetargetingConfig
 from lerobot.teleoperators.teleoperator import Teleoperator
 
 from .config_xhand_vr import XHandVRTeleoperatorConfig
+from .vr_hand_detector_adapter import VRHandDetectorAdapter
+import vr_message_router
 
 logger = logging.getLogger(__name__)
 
@@ -43,14 +45,24 @@ class XHandVRTeleoperator(Teleoperator):
         
         # Initialize VR hand detector adapter
         try:
-            from .vr_hand_detector_adapter import VRHandDetectorAdapter
+            # Create router config
+            router_config = vr_message_router.VRRouterConfig()
+            router_config.tcp_port = config.vr_tcp_port
+            router_config.verbose = config.vr_verbose
+            router_config.message_timeout_ms = 100.0  # 100ms timeout
+            
+            # Initialize router
+            self.router = vr_message_router.VRMessageRouter(router_config)
+            self.router_available = True
+
             hand_type_str = "Right" if config.hand_type == config.hand_type.right else "Left"
             self.detector = VRHandDetectorAdapter(
                 hand_type=hand_type_str, 
                 robot_name=str(config.robot_name), 
                 use_tcp=True,
                 tcp_port=config.vr_tcp_port,
-                verbose=config.vr_verbose
+                verbose=config.vr_verbose,
+                router=self.router
             )
         except ImportError as e:
             logger.error(f"VRHandDetectorAdapter not available: {e}. Please build the VR message router.")

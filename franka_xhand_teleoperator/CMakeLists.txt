@@ -1,3 +1,5 @@
+# DEPRECATED: Use setup.py instead for pip-installable package
+# This CMakeLists.txt is kept for reference but setup.py is now the preferred build method
 cmake_minimum_required(VERSION 3.12)
 project(franka_xhand_teleoperator)
 
@@ -41,7 +43,7 @@ target_link_libraries(weighted_ik_bridge PRIVATE Eigen3::Eigen)
 set_target_properties(weighted_ik_bridge PROPERTIES
     CXX_VISIBILITY_PRESET "hidden"
     VISIBILITY_INLINES_HIDDEN ON
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build"
 )
 
 # VR IK Bridge module removed - using vr_message_router instead

@@ -20,7 +20,7 @@ make -j$(nproc)
 cd ..
 
 # Check if builds succeeded
-if [ -f src/vr_message_router*.so ] && [ -f src/weighted_ik_bridge*.so ]; then
+if [ -f build/vr_message_router*.so ] && [ -f build/weighted_ik_bridge*.so ]; then
     echo "✅ All extensions built successfully!"
     echo "📁 Generated files:"
     ls -la src/*.so
