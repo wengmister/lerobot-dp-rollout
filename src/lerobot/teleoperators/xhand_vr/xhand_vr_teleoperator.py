@@ -10,7 +10,7 @@ from lerobot.teleoperators.teleoperator import Teleoperator
 
 from .config_xhand_vr import XHandVRTeleoperatorConfig
 from .vr_hand_detector_adapter import VRHandDetectorAdapter
-import vr_message_router
+from ..vr_router_manager import get_vr_router_manager, VRRouterConfig
 
 logger = logging.getLogger(__name__)
 
@@ -46,19 +46,8 @@ class XHandVRTeleoperator(Teleoperator):
         super().__init__(config)
         self.config = config
         
-        # Import ADB setup utilities if needed
-        self._adb_setup_available = False
-        self._adb_setup_done = False
-        if config.setup_adb:
-            try:
-                from ..adb_setup import setup_adb_reverse, cleanup_adb_reverse
-                self.setup_adb_reverse = setup_adb_reverse
-                self.cleanup_adb_reverse = cleanup_adb_reverse
-                self._adb_setup_available = True
-                logger.info("ADB setup utilities loaded successfully")
-            except ImportError as e:
-                logger.warning(f"ADB setup not available: {e}. Manual adb reverse setup required.")
-                self._adb_setup_available = False
+        # Get shared VR router manager
+        self.vr_manager = get_vr_router_manager()
         
         # Set default robot directory if not provided
         if config.robot_dir is None:
@@ -76,36 +65,22 @@ class XHandVRTeleoperator(Teleoperator):
         
         # Initialize VR hand detector adapter
         try:
-            # Create router config
-            router_config = vr_message_router.VRRouterConfig()
-            router_config.tcp_port = config.vr_tcp_port
-            router_config.verbose = config.vr_verbose
-            router_config.message_timeout_ms = 100.0  # 100ms timeout
-            
-            # Initialize router
-            self.router = vr_message_router.VRMessageRouter(router_config)
-            self.router_available = True
-
             hand_type_str = "Right" if config.hand_type == config.hand_type.right else "Left"
             self.detector = VRHandDetectorAdapter(
                 hand_type=hand_type_str, 
                 robot_name=str(config.robot_name), 
                 tcp_port=config.vr_tcp_port,
                 verbose=config.vr_verbose,
-                router=self.router
+                router=None  # Will be set to use shared manager
             )
         except ImportError as e:
-            logger.error(f"VRHandDetectorAdapter not available: {e}. Please build the VR message router.")
+            logger.error(f"VRHandDetectorAdapter not available: {e}")
             self.detector = None
-            raise ImportError("VR message router C++ module not found. Please build franka_xhand_teleoperator.")
-        except (RuntimeError, OSError) as e:
-            logger.error(f"Failed to start VR message router: {e}")
-            self.detector = None
-            raise RuntimeError(f"VR message router startup failed: {e}")
+            raise ImportError("VR hand detector not available.")
         except Exception as e:
-            logger.error(f"Unexpected error setting up VR teleoperator: {e}")
+            logger.error(f"Unexpected error setting up VR hand detector: {e}")
             self.detector = None
-            raise RuntimeError(f"VR teleoperator setup failed: {e}")
+            raise RuntimeError(f"VR hand detector setup failed: {e}")
         
         # Control settings
         self.control_frequency = config.control_frequency
@@ -135,22 +110,22 @@ class XHandVRTeleoperator(Teleoperator):
         """VR teleoperator doesn't require calibration."""
         return True
     
-    def connect(self, calibrate: bool = True) -> None:
+    def connect(self, calibrate: bool = True) -> None:  # pylint: disable=unused-argument
         """Connect the teleoperator."""
         if self.detector is None:
             raise RuntimeError("VR hand detector not available")
         
-        # Setup adb port forwarding if requested and available
-        if self.config.setup_adb and self._adb_setup_available:
-            try:
-                success = self.setup_adb_reverse(self.config.vr_tcp_port)
-                if success:
-                    self._adb_setup_done = True
-                    logger.info(f"ADB reverse setup successful for port {self.config.vr_tcp_port}")
-                else:
-                    logger.warning("ADB reverse setup failed - make sure VR device can reach this machine")
-            except Exception as e:
-                logger.warning(f"Error during ADB setup: {e}")
+        # Register with shared VR router manager
+        vr_config = VRRouterConfig(
+            tcp_port=self.config.vr_tcp_port,
+            verbose=self.config.vr_verbose,
+            message_timeout_ms=100.0,
+            setup_adb=self.config.setup_adb
+        )
+        
+        success = self.vr_manager.register_teleoperator(vr_config, "xhand_vr")
+        if not success:
+            raise ConnectionError(f"Failed to register with VR router manager on port {self.config.vr_tcp_port}")
         
         self._is_connected = True
         logger.info("XHand VR teleoperator connected")
@@ -169,14 +144,8 @@ class XHandVRTeleoperator(Teleoperator):
     
     def disconnect(self) -> None:
         """Disconnect the teleoperator."""
-        # Cleanup adb reverse if we set it up
-        if self._adb_setup_done and self._adb_setup_available:
-            try:
-                self.cleanup_adb_reverse(self.config.vr_tcp_port)
-                logger.info("ADB reverse cleanup completed")
-            except Exception as e:
-                logger.warning(f"Error during ADB cleanup: {e}")
-            self._adb_setup_done = False
+        # Unregister from shared VR router manager
+        self.vr_manager.unregister_teleoperator("xhand_vr")
         
         self._is_connected = False
         logger.info("XHand VR teleoperator disconnected")
@@ -195,11 +164,35 @@ class XHandVRTeleoperator(Teleoperator):
             raise RuntimeError("VR hand detector not available")
         
         try:
-            # Detect hand pose
-            _, joint_pos, _, _ = self.detector.detect()
+            # Get VR landmarks data from shared manager
+            landmarks_data, status = self.vr_manager.get_landmarks_data()
+            
+            logger.info(f"VR status: {status}")
+            logger.info(f"Landmarks data: {landmarks_data is not None}")
+            if landmarks_data:
+                logger.info(f"Landmarks count: {len(landmarks_data.landmarks) if hasattr(landmarks_data, 'landmarks') else 'No landmarks attr'}")
+                if hasattr(landmarks_data, 'landmarks') and len(landmarks_data.landmarks) > 0:
+                    # Show a few landmark points for debugging
+                    logger.info(f"First landmark: {landmarks_data.landmarks[0]}")
+                    logger.info(f"Wrist landmark: {landmarks_data.landmarks[0] if len(landmarks_data.landmarks) > 0 else 'None'}")
+            
+            if not status.get('tcp_connected', False) or landmarks_data is None:
+                # No valid VR data, return previous action or home position
+                if self.last_joint_positions is not None:
+                    action = self._convert_to_xhand_action(self.last_joint_positions)
+                    logger.debug("No VR data - using last joint positions")
+                    return action
+                else:
+                    # Return home position (open hand)
+                    action = {f"joint_{i}.pos": 0.0 for i in range(12)}
+                    logger.info("No VR data - returning home position (all joints 0.0)")
+                    return action
+            
+            # Process landmarks data through detector
+            joint_pos = self.detector.process_landmarks_data(landmarks_data)
             
             if joint_pos is None:
-                # Return previous action or home position if no hand detected
+                # Processing failed, return previous action or home position
                 if self.last_joint_positions is not None:
                     return self._convert_to_xhand_action(self.last_joint_positions)
                 else:
@@ -230,7 +223,9 @@ class XHandVRTeleoperator(Teleoperator):
             xhand_joint_positions = self._map_to_xhand_order(qpos)
             
             # Convert to XHand action format
-            return self._convert_to_xhand_action(xhand_joint_positions)
+            action = self._convert_to_xhand_action(xhand_joint_positions)
+            logger.info(f"Final hand action angles (degrees): {[f'{np.degrees(action[f"joint_{i}.pos"]):.1f}' for i in range(12)]}")
+            return action
             
         except ValueError as e:
             logger.warning(f"Invalid VR data format: {e}")

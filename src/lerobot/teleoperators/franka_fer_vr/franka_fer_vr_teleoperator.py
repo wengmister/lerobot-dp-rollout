@@ -12,8 +12,7 @@ from typing import Dict, Any
 
 from lerobot.teleoperators.teleoperator import Teleoperator
 from .config_franka_fer_vr import FrankaFERVRTeleoperatorConfig
-
-import vr_message_router
+from ..vr_router_manager import get_vr_router_manager, VRRouterConfig
 
 logger = logging.getLogger(__name__)
 
@@ -65,30 +64,11 @@ class FrankaFERVRTeleoperator(Teleoperator):
         super().__init__(config)
         self.config = config
         
-        # Import ADB setup utilities if needed
-        self._adb_setup_available = False
-        if config.setup_adb:
-            try:
-                from ..adb_setup import setup_adb_reverse, cleanup_adb_reverse
-                self.setup_adb_reverse = setup_adb_reverse
-                self.cleanup_adb_reverse = cleanup_adb_reverse
-                self._adb_setup_available = True
-                logger.info("ADB setup utilities loaded successfully")
-            except ImportError as e:
-                logger.warning(f"ADB setup not available: {e}. Manual adb reverse setup required.")
-                self._adb_setup_available = False
-    
+        # Get shared VR router manager
+        self.vr_manager = get_vr_router_manager()
         
         # Import arm IK processor
         from .arm_ik_processor import ArmIKProcessor
-        
-        # Initialize VR message router
-        router_config = vr_message_router.VRRouterConfig()
-        router_config.tcp_port = config.tcp_port
-        router_config.verbose = config.verbose
-        router_config.message_timeout_ms = 200.0  # 200ms timeout
-        
-        self.vr_router = vr_message_router.VRMessageRouter(router_config)
         
         # Initialize IK processor
         ik_config = {
@@ -102,7 +82,6 @@ class FrankaFERVRTeleoperator(Teleoperator):
         self._initialized = False
         self._is_connected = False
         self._last_action = None
-        self._adb_setup_done = False
         
         logger.info(f"FrankaFERVRTeleoperator initialized with TCP port {config.tcp_port}")
     
@@ -121,24 +100,17 @@ class FrankaFERVRTeleoperator(Teleoperator):
         if self._is_connected:
             raise RuntimeError("FrankaFERVRTeleoperator is already connected")
         
-        # Robot reference will be set during first get_action call
-        # This follows the standard teleoperator interface
+        # Register with shared VR router manager
+        vr_config = VRRouterConfig(
+            tcp_port=self.config.tcp_port,
+            verbose=self.config.verbose,
+            message_timeout_ms=200.0,
+            setup_adb=self.config.setup_adb
+        )
         
-        # Setup adb port forwarding if requested and available
-        if self.config.setup_adb and self._adb_setup_available:
-            try:
-                success = self.setup_adb_reverse(self.config.tcp_port)
-                if success:
-                    self._adb_setup_done = True
-                    logger.info(f"ADB reverse setup successful for port {self.config.tcp_port}")
-                else:
-                    logger.warning("ADB reverse setup failed - make sure VR device can reach this machine")
-            except Exception as e:
-                logger.warning(f"Error during ADB setup: {e}")
-        
-        # Start TCP server for VR data
-        if not self.vr_router.start_tcp_server():
-            raise ConnectionError(f"Failed to start VR TCP server on port {self.config.tcp_port}")
+        success = self.vr_manager.register_teleoperator(vr_config, "franka_fer_vr")
+        if not success:
+            raise ConnectionError(f"Failed to register with VR router manager on port {self.config.tcp_port}")
         
         # Wait for robot to be connected to get initial state
         if self._robot_reference and hasattr(self._robot_reference, 'is_connected') and not self._robot_reference.is_connected:
@@ -165,16 +137,8 @@ class FrankaFERVRTeleoperator(Teleoperator):
         if not self._is_connected:
             return
         
-        self.vr_router.stop()
-        
-        # Cleanup adb reverse if we set it up
-        if self._adb_setup_done and self._adb_setup_available:
-            try:
-                self.cleanup_adb_reverse(self.config.tcp_port)
-                logger.info("ADB reverse cleanup completed")
-            except Exception as e:
-                logger.warning(f"Error during ADB cleanup: {e}")
-            self._adb_setup_done = False
+        # Unregister from shared VR router manager
+        self.vr_manager.unregister_teleoperator("franka_fer_vr")
         
         self._is_connected = False
         self._initialized = False
@@ -241,20 +205,19 @@ class FrankaFERVRTeleoperator(Teleoperator):
             else:
                 return {f"joint_{i}.pos": 0.0 for i in range(7)}
         
-        # Get VR messages and process through IK
+        # Get VR wrist data from shared manager and process through IK
         try:
-            # Get VR messages from router
-            messages = self.vr_router.get_messages()
-            status = self.vr_router.get_status()
+            # Get VR wrist data from shared manager
+            wrist_data, status = self.vr_manager.get_wrist_data()
             
-            if not status['tcp_connected'] or not messages.wrist_valid:
+            if not status.get('tcp_connected', False) or wrist_data is None:
                 # No valid VR data, return current position to hold
                 action = {f"joint_{i}.pos": float(current_joints[i]) for i in range(7)}
                 return action
             
             # Process VR wrist data through IK
             arm_action = self.arm_ik_processor.process_wrist_data(
-                messages.wrist_data, 
+                wrist_data, 
                 current_joints
             )
             
@@ -288,14 +251,13 @@ class FrankaFERVRTeleoperator(Teleoperator):
         status = {
             "connected": self._is_connected,
             "initialized": self._initialized,
-            "adb_setup": self._adb_setup_done,
             "vr_connected": False,
             "vr_ready": False
         }
         
         if self._is_connected:
             try:
-                vr_status = self.vr_router.get_status()
+                vr_status = self.vr_manager.get_status()
                 status.update(vr_status)
                 status["vr_ready"] = vr_status.get("tcp_connected", False)
             except Exception as e:

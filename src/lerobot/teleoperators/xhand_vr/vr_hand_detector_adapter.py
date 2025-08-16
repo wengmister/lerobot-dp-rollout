@@ -121,32 +121,39 @@ class VRHandDetectorAdapter:
         self.operator2mano = OPERATOR2MANO_RIGHT
         self.router = router
         
-        # Import and initialize VR message router
-        try:           
-            # Start TCP server
-            if not self.router.start_tcp_server():
-                logger.error("Failed to start VR message router TCP server - port may be in use")
+        # Handle router initialization
+        if self.router is None:
+            # No router provided - adapter will work with external VR manager
+            # This is the new mode for shared VR router architecture
+            self.router_available = False
+            logger.info("VRHandDetectorAdapter initialized for shared VR manager mode")
+        else:
+            # Legacy mode: manage own router (deprecated)
+            try:           
+                # Start TCP server
+                if not self.router.start_tcp_server():
+                    logger.error("Failed to start VR message router TCP server - port may be in use")
+                    self.router_available = False
+                    raise RuntimeError(f"TCP server failed to bind to port {tcp_port}")
+                else:
+                    logger.info(f"VR message router started on port {tcp_port}")
+                    self.router_available = True
+                    
+            except ImportError as e:
+                logger.error(f"VRMessageRouter not available: {e}. Please build the C++ module.")
+                self.router = None
                 self.router_available = False
-                raise RuntimeError(f"TCP server failed to bind to port {tcp_port}")
-            else:
-                logger.info(f"VR message router started on port {tcp_port}")
-                self.router_available = True
-                
-        except ImportError as e:
-            logger.error(f"VRMessageRouter not available: {e}. Please build the C++ module.")
-            self.router = None
-            self.router_available = False
-            raise ImportError("vr_message_router module not found - please build the C++ extension")
-        except OSError as e:
-            logger.error(f"Network error starting VR router: {e}")
-            self.router = None
-            self.router_available = False
-            raise OSError(f"Failed to bind TCP socket to port {tcp_port}: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error initializing VR message router: {e}")
-            self.router = None
-            self.router_available = False
-            raise RuntimeError(f"VR message router initialization failed: {e}")
+                raise ImportError("vr_message_router module not found - please build the C++ extension")
+            except OSError as e:
+                logger.error(f"Network error starting VR router: {e}")
+                self.router = None
+                self.router_available = False
+                raise OSError(f"Failed to bind TCP socket to port {tcp_port}: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error initializing VR message router: {e}")
+                self.router = None
+                self.router_available = False
+                raise RuntimeError(f"VR message router initialization failed: {e}")
     
     def detect(self) -> Tuple[Any, Optional[np.ndarray], Optional[np.ndarray], Any]:
         """
@@ -175,6 +182,10 @@ class VRHandDetectorAdapter:
             None: Errors are caught and logged, returns (None, None, None, None) on failure
         """
         if not self.router_available or self.router is None:
+            # In shared VR manager mode, this method should not be called directly
+            # Use process_landmarks_data() instead with data from VRRouterManager
+            if self.verbose:
+                logger.debug("detect() called in shared VR manager mode - use process_landmarks_data() instead")
             return None, None, None, None
         
         try:
@@ -350,6 +361,72 @@ class VRHandDetectorAdapter:
             z *= -1
         frame = np.stack([x, normal, z], axis=1)
         return frame
+    
+    def process_landmarks_data(self, landmarks_data) -> Optional[np.ndarray]:
+        """
+        Process landmarks data from external source (like VR router manager).
+        
+        Args:
+            landmarks_data: Landmarks data object with .landmarks attribute
+            
+        Returns:
+            Processed joint positions as numpy array or None if processing failed
+        """
+        try:
+            if landmarks_data is None or not hasattr(landmarks_data, 'landmarks'):
+                return None
+                
+            landmarks = landmarks_data.landmarks
+            if len(landmarks) == 0:
+                return None
+            
+            # Convert to numpy array (N, 3) where N should be 21 for hand landmarks
+            joint_pos = np.array(landmarks, dtype=np.float32)
+            
+            # DEBUG: Print raw VR input
+            print(f"🔍 RAW VR LANDMARKS INPUT:")
+            print(f"  Shape: {joint_pos.shape}")
+            print(f"  First 3 landmarks: {joint_pos[:3]}")
+            print(f"  Wrist (landmark 0): {joint_pos[0]}")
+            print(f"  Index tip (landmark 8): {joint_pos[8] if len(joint_pos) > 8 else 'N/A'}")
+            
+            # Apply the same processing logic as in detect() method
+            # (Copy the landmark processing logic from detect() method)
+            
+            if joint_pos.shape[0] != 21:
+                if self.verbose:
+                    logger.warning(f"Expected 21 landmarks, got {joint_pos.shape[0]}")
+                return None
+            
+            # Apply EXACT same transformations as original detect() method
+            keypoint_3d_array = joint_pos.copy()
+            
+            # Scale to match MediaPipe coordinate range (from original)
+            keypoint_3d_array *= 1.05
+            
+            # Convert coordinate system for right hand (from original)
+            if self.hand_type == "Right":
+                keypoint_3d_array[:, 0] = -keypoint_3d_array[:, 0]
+            
+            # Make wrist the origin (same as MediaPipe processing) - EXACT SAME AS ORIGINAL
+            keypoint_3d_array = keypoint_3d_array - keypoint_3d_array[0:1, :]
+
+            # Estimate hand orientation using the shifted array - EXACT SAME AS ORIGINAL
+            wrist_rot = self.estimate_frame_from_hand_points(keypoint_3d_array)
+            
+            # Transform to MANO coordinate system - EXACT SAME AS ORIGINAL
+            joint_pos = keypoint_3d_array @ wrist_rot @ self.operator2mano
+            
+            # Apply robot-specific adaptive retargeting
+            if "xhand" in self.robot_name.lower():
+                joint_pos = adaptive_retargeting_xhand(joint_pos)
+            
+            return joint_pos
+            
+        except Exception as e:
+            if self.verbose:
+                logger.error(f"Error processing external landmarks data: {e}")
+            return None
     
     def __del__(self):
         """Clean up resources."""
