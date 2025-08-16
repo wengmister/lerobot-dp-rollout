@@ -114,6 +114,8 @@ def main():
         )
     }
     
+    # Note: will need to manufally change v4l2 camera config
+    
     # Create composite robot configuration
     robot_config = FrankaFERXHandConfig(
         arm_config=arm_config,
@@ -232,7 +234,7 @@ def main():
                 else:
                     print("   - WARNING: Arm homing failed!")
                 print("   - Waiting for arm to reach home position...")
-                time.sleep(3.0)  # Give arm time to reach home
+                time.sleep(2.0)  # Give arm time to reach home
             else:
                 print("   - WARNING: Arm reset_to_home not available")
             
@@ -297,10 +299,17 @@ def main():
             
             # Handle re-recording if requested
             if events.get("rerecord_episode", False):
-                log_say("Re-recording episode")
+                log_say("Re-recording episode - will reset and restart")
                 events["rerecord_episode"] = False
                 events["exit_early"] = False
                 dataset.clear_episode_buffer()
+                
+                # Disconnect teleop to prepare for reset
+                if teleop.is_connected:
+                    teleop.disconnect()
+                    print("Teleoperator disconnected for re-record")
+                
+                # Don't increment episode count, just continue to redo this episode
                 continue
             
             # Save the episode
