@@ -182,7 +182,7 @@ class FrankaFERXHand(Robot):
         # Get camera observations
         start = time.perf_counter()
         for cam_name, cam in self.cameras.items():
-            obs_dict[cam_name] = cam.get_image()
+            obs_dict[cam_name] = cam.read()
         cam_time = time.perf_counter() - start
         
         logger.debug(f"Arm obs: {arm_time*1000:.1f}ms, Hand obs: {hand_time*1000:.1f}ms, Cameras: {cam_time*1000:.1f}ms")
