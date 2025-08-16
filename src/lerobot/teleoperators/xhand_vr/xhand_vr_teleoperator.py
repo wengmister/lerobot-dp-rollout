@@ -225,17 +225,7 @@ class XHandVRTeleoperator(Teleoperator):
             
             # Apply smoothing if we have previous positions
             if self.last_joint_positions is not None:
-                qpos_before_smooth = qpos.copy()
                 qpos = self._apply_smoothing(qpos, self.last_joint_positions)
-                
-                # Log if there's a big change (potential twitch)
-                max_change = np.max(np.abs(qpos - self.last_joint_positions))
-                if max_change > 0.5:  # > 28 degrees change
-                    import time
-                    logger.warning(f"LARGE JOINT CHANGE at {time.time():.3f}: max_change={max_change:.3f} rad ({np.degrees(max_change):.1f}°)")
-                    logger.warning(f"  Before smooth: {[f'{np.degrees(a):.1f}' for a in qpos_before_smooth[:5]]}")
-                    logger.warning(f"  After smooth:  {[f'{np.degrees(a):.1f}' for a in qpos[:5]]}")
-                    logger.warning(f"  Previous:      {[f'{np.degrees(a):.1f}' for a in self.last_joint_positions[:5]]}")
             
             self.last_joint_positions = qpos.copy()
             

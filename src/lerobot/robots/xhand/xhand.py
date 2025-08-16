@@ -231,7 +231,8 @@ class XHand(Robot):
                 ignored_errors = [
                     "Sensor fails to read the combined force",
                     "Sensor fails to read the distributed force", 
-                    "Sensor fails to read temperature"
+                    "Sensor fails to read temperature",
+                    "Communication data CRC error"
                 ]
                 
                 if not any(ignored_error in error_struct.error_message for ignored_error in ignored_errors):
