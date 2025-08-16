@@ -96,16 +96,23 @@ class VRHandDetectorAdapter:
     """
     
     def __init__(self, hand_type: str = "Right", robot_name: str = "xhand", 
-                 use_tcp: bool = True, tcp_port: int = 8000, verbose: bool = False, router: vr_message_router.VRMessageRouter = None):
+                 tcp_port: int = 8000, verbose: bool = False, router: vr_message_router.VRMessageRouter = None):
         """
         Initialize the VR hand detector adapter.
         
+        This adapter wraps the VRMessageRouter C++ implementation to provide the same interface
+        as the original VRHandDetector, enabling seamless integration with existing retargeting code.
+        
         Args:
             hand_type: Hand type ("Right" or "Left") - currently only Right supported
-            robot_name: Robot name (for compatibility, not used)
-            use_tcp: Whether to use TCP (for compatibility, always True)
-            tcp_port: TCP port for VR message router
-            verbose: Enable verbose logging
+            robot_name: Robot name used for robot-specific retargeting (e.g., "xhand")
+            tcp_port: TCP port for VR message router communication
+            verbose: Enable verbose logging for debugging
+            router: Pre-configured VRMessageRouter instance to use
+            
+        Raises:
+            ImportError: If vr_message_router module is not available
+            RuntimeError: If TCP server fails to start
         """
         self.hand_type = hand_type
         self.robot_name = robot_name
@@ -118,8 +125,9 @@ class VRHandDetectorAdapter:
         try:           
             # Start TCP server
             if not self.router.start_tcp_server():
-                logger.error("Failed to start VR message router TCP server")
+                logger.error("Failed to start VR message router TCP server - port may be in use")
                 self.router_available = False
+                raise RuntimeError(f"TCP server failed to bind to port {tcp_port}")
             else:
                 logger.info(f"VR message router started on port {tcp_port}")
                 self.router_available = True
@@ -128,19 +136,43 @@ class VRHandDetectorAdapter:
             logger.error(f"VRMessageRouter not available: {e}. Please build the C++ module.")
             self.router = None
             self.router_available = False
-        except Exception as e:
-            logger.error(f"Failed to initialize VR message router: {e}")
+            raise ImportError("vr_message_router module not found - please build the C++ extension")
+        except OSError as e:
+            logger.error(f"Network error starting VR router: {e}")
             self.router = None
             self.router_available = False
+            raise OSError(f"Failed to bind TCP socket to port {tcp_port}: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error initializing VR message router: {e}")
+            self.router = None
+            self.router_available = False
+            raise RuntimeError(f"VR message router initialization failed: {e}")
     
     def detect(self) -> Tuple[Any, Optional[np.ndarray], Optional[np.ndarray], Any]:
         """
-        Detect hand pose from VR input.
+        Detect hand pose from VR input and apply coordinate transformations.
+        
+        This method retrieves hand landmarks from the VR message router, applies the same
+        coordinate transformations as the original MediaPipe-based VRHandDetector, and
+        returns data in the format expected by dex-retargeting.
+        
+        The transformation pipeline includes:
+        1. Scale landmarks to match MediaPipe coordinate range (1.05x)
+        2. Flip X-coordinate for right hand to correct mirroring
+        3. Center landmarks at wrist (make wrist origin)
+        4. Estimate hand orientation using SVD on key points
+        5. Transform to MANO coordinate system
+        6. Apply robot-specific adaptive retargeting if needed
         
         Returns:
             tuple: (None, joint_pos, keypoint_2d, None) matching VRHandDetector interface
-                - joint_pos: numpy array of shape (21, 3) with 3D landmark positions
+                - joint_pos: numpy array of shape (21, 3) with transformed 3D landmark positions
+                  in MANO coordinate system, ready for dex-retargeting
                 - keypoint_2d: None (not used by retargeting)
+                - Other elements: None (compatibility with original interface)
+                
+        Raises:
+            None: Errors are caught and logged, returns (None, None, None, None) on failure
         """
         if not self.router_available or self.router is None:
             return None, None, None, None
@@ -166,11 +198,13 @@ class VRHandDetectorAdapter:
             joint_pos = np.array(landmarks, dtype=np.float32)
             
             if joint_pos.shape[0] != 21:
-                logger.warning(f"Expected 21 landmarks, got {joint_pos.shape[0]}")
+                logger.warning(f"Invalid landmark count: expected 21, got {joint_pos.shape[0]}. "
+                             f"Check VR app hand tracking output format.")
                 return None, None, None, None
             
             if joint_pos.shape[1] != 3:
-                logger.warning(f"Expected 3D landmarks, got shape {joint_pos.shape}")
+                logger.warning(f"Invalid landmark dimensions: expected 3D coordinates, got shape {joint_pos.shape}. "
+                             f"Each landmark should have [x, y, z] coordinates.")
                 return None, None, None, None
             
             if self.verbose:
@@ -203,8 +237,16 @@ class VRHandDetectorAdapter:
             # keypoint_2d is set to None since retargeting only uses joint_pos
             return None, joint_pos, None, None
             
+        except ValueError as e:
+            logger.error(f"Data conversion error in VR hand detection: {e}. "
+                        f"Check landmark data format from VR app.")
+            return None, None, None, None
+        except np.linalg.LinAlgError as e:
+            logger.error(f"Linear algebra error in hand orientation estimation: {e}. "
+                        f"Hand pose may be degenerate or invalid.")
+            return None, None, None, None
         except Exception as e:
-            logger.error(f"Error in VR hand detection: {e}")
+            logger.error(f"Unexpected error in VR hand detection: {e}")
             return None, None, None, None
     
     def get_wrist_data(self) -> Optional[dict]:
@@ -261,9 +303,29 @@ class VRHandDetectorAdapter:
     @staticmethod
     def estimate_frame_from_hand_points(keypoint_3d_array: np.ndarray) -> np.ndarray:
         """
-        Compute the 3D coordinate frame (orientation only) from detected 3d key points
-        :param points: keypoint3 detected from MediaPipe detector. Order: [wrist, index, middle, pinky]
-        :return: the coordinate frame of wrist in MANO convention
+        Compute the 3D coordinate frame (orientation only) from detected hand landmarks.
+        
+        This method estimates the hand's coordinate frame using Singular Value Decomposition (SVD)
+        on key hand points (wrist, index MCP, middle MCP) and applies Gram-Schmidt orthonormalization
+        to create a consistent coordinate system aligned with MANO conventions.
+        
+        Algorithm:
+        1. Extract wrist, index MCP, and middle MCP points
+        2. Compute initial X vector from wrist to middle MCP
+        3. Fit a plane through the three points using SVD
+        4. Orthonormalize X and Z vectors using Gram-Schmidt process
+        5. Ensure consistent handedness based on index-to-middle direction
+        
+        Args:
+            keypoint_3d_array: Hand landmarks array of shape (21, 3) with landmarks
+                              centered at wrist (wrist at origin)
+                              
+        Returns:
+            np.ndarray: 3x3 rotation matrix representing the hand's coordinate frame
+                       in MANO convention, where columns are [x_axis, y_axis, z_axis]
+                       
+        Raises:
+            AssertionError: If input array is not shape (21, 3)
         """
         assert keypoint_3d_array.shape == (21, 3)
         points = keypoint_3d_array[[0, 5, 9], :]

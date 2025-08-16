@@ -19,7 +19,24 @@ class XHandVRTeleoperator(Teleoperator):
     """
     Teleoperator that bridges VR hand tracking with XHand robot control.
     
-    Uses dex-retargeting to convert human hand poses to robot joint commands.
+    This teleoperator receives hand tracking data from a VR application via TCP,
+    processes it through the dex-retargeting pipeline with coordinate transformations,
+    and outputs robot joint commands compatible with the XHand robot.
+    
+    The data flow is:
+    1. VR app sends 21 hand landmarks via TCP to VRMessageRouter
+    2. VRHandDetectorAdapter receives and transforms landmarks to MANO coordinate system
+    3. Dex-retargeting converts MANO poses to robot joint positions
+    4. Joint positions are mapped to XHand joint order and sent as actions
+    
+    Requires:
+    - VR message router C++ module built and available
+    - VR application sending hand landmarks to configured TCP port
+    - ADB reverse port forwarding set up for Meta Quest devices
+    
+    Attributes:
+        config_class: Configuration class for this teleoperator
+        name: Unique identifier for this teleoperator type
     """
     
     config_class = XHandVRTeleoperatorConfig
@@ -59,7 +76,6 @@ class XHandVRTeleoperator(Teleoperator):
             self.detector = VRHandDetectorAdapter(
                 hand_type=hand_type_str, 
                 robot_name=str(config.robot_name), 
-                use_tcp=True,
                 tcp_port=config.vr_tcp_port,
                 verbose=config.vr_verbose,
                 router=self.router
@@ -67,6 +83,15 @@ class XHandVRTeleoperator(Teleoperator):
         except ImportError as e:
             logger.error(f"VRHandDetectorAdapter not available: {e}. Please build the VR message router.")
             self.detector = None
+            raise ImportError("VR message router C++ module not found. Please build franka_xhand_teleoperator.")
+        except (RuntimeError, OSError) as e:
+            logger.error(f"Failed to start VR message router: {e}")
+            self.detector = None
+            raise RuntimeError(f"VR message router startup failed: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error setting up VR teleoperator: {e}")
+            self.detector = None
+            raise RuntimeError(f"VR teleoperator setup failed: {e}")
         
         # Control settings
         self.control_frequency = config.control_frequency
@@ -172,8 +197,16 @@ class XHandVRTeleoperator(Teleoperator):
             # Convert to XHand action format
             return self._convert_to_xhand_action(xhand_joint_positions)
             
+        except ValueError as e:
+            logger.warning(f"Invalid VR data format: {e}")
+            # Return safe default action
+            return {f"joint_{i}.pos": 0.0 for i in range(12)}
+        except np.linalg.LinAlgError as e:
+            logger.warning(f"Hand pose calculation error: {e}")
+            # Return safe default action  
+            return {f"joint_{i}.pos": 0.0 for i in range(12)}
         except Exception as e:
-            logger.warning(f"Error getting VR action: {e}")
+            logger.warning(f"Unexpected error getting VR action: {e}")
             # Return safe default action
             return {f"joint_{i}.pos": 0.0 for i in range(12)}
     
