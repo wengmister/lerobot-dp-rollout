@@ -32,12 +32,12 @@ class FrankaFERVRTeleoperator(Teleoperator):
     - Automatic adb port forwarding setup for Android VR apps using adb_setup.py
     
     The data flow is:
-    1. VR app sends hand pose data via TCP to vr_ik_bridge
-    2. C++ IK solver computes target joint positions using weighted optimization
+    1. VR app sends hand pose data via TCP to vr_message_router
+    2. VR messages are processed through arm_ik_processor for joint target computation
     3. Joint positions are returned as robot actions
     
     Requires:
-    - vr_ik_bridge C++ module built and available
+    - vr_message_router C++ module built and available (from franka_xhand_teleoperator)
     - VR application sending hand pose data to configured TCP port
     - ADB reverse port forwarding set up for Meta Quest devices (optional, auto-configured)
     
@@ -76,27 +76,34 @@ class FrankaFERVRTeleoperator(Teleoperator):
                 logger.warning(f"ADB setup not available: {e}. Manual adb reverse setup required.")
                 self._adb_setup_available = False
         
-        # Import the C++ bridge
+        # Import the VR message router and arm IK processor
         try:
-            import vr_ik_bridge
-            self.bridge_module = vr_ik_bridge
+            import vr_message_router
+            self.vr_router_module = vr_message_router
         except ImportError as e:
             raise ImportError(
-                "Failed to import vr_ik_bridge module. "
+                "Failed to import vr_message_router module. "
                 "Please build the C++ extension first using: "
-                "cd franka_teleoperator && python setup.py build_ext --inplace"
+                "cd franka_xhand_teleoperator && python setup.py build_ext --inplace"
             ) from e
         
-        # Initialize VR bridge
-        bridge_config = vr_ik_bridge.VRTeleopConfig()
-        bridge_config.tcp_port = config.tcp_port
-        bridge_config.smoothing_factor = config.smoothing_factor
-        bridge_config.position_deadzone = config.position_deadzone
-        bridge_config.orientation_deadzone = config.orientation_deadzone
-        bridge_config.max_position_offset = config.max_position_offset
-        bridge_config.verbose = config.verbose
+        # Import arm IK processor
+        from .arm_ik_processor import ArmIKProcessor
         
-        self.vr_bridge = vr_ik_bridge.VRIKBridge(bridge_config)
+        # Initialize VR message router
+        router_config = vr_message_router.VRRouterConfig()
+        router_config.tcp_port = config.tcp_port
+        router_config.verbose = config.verbose
+        router_config.message_timeout_ms = 200.0  # 200ms timeout
+        
+        self.vr_router = vr_message_router.VRMessageRouter(router_config)
+        
+        # Initialize IK processor
+        ik_config = {
+            'verbose': config.verbose,
+            'smoothing_factor': config.smoothing_factor
+        }
+        self.arm_ik_processor = ArmIKProcessor(ik_config)
         
         # State tracking
         self._robot_reference = None
@@ -138,7 +145,7 @@ class FrankaFERVRTeleoperator(Teleoperator):
                 logger.warning(f"Error during ADB setup: {e}")
         
         # Start TCP server for VR data
-        if not self.vr_bridge.start_tcp_server():
+        if not self.vr_router.start_tcp_server():
             raise ConnectionError(f"Failed to start VR TCP server on port {self.config.tcp_port}")
         
         # Wait for robot to be connected to get initial state
@@ -166,7 +173,7 @@ class FrankaFERVRTeleoperator(Teleoperator):
         if not self._is_connected:
             return
         
-        self.vr_bridge.stop()
+        self.vr_router.stop()
         
         # Cleanup adb reverse if we set it up
         if self._adb_setup_done and self._adb_setup_available:
@@ -242,12 +249,27 @@ class FrankaFERVRTeleoperator(Teleoperator):
             else:
                 return {f"joint_{i}.pos": 0.0 for i in range(7)}
         
-        # Get target joint positions from VR IK solver
+        # Get VR messages and process through IK
         try:
-            target_joints = self.vr_bridge.get_joint_targets(current_joints)
+            # Get VR messages from router
+            messages = self.vr_router.get_messages()
+            status = self.vr_router.get_status()
             
-            # Convert to action dictionary
-            action = {f"joint_{i}.pos": float(target_joints[i]) for i in range(7)}
+            if not status['tcp_connected'] or not messages.wrist_valid:
+                # No valid VR data, return current position to hold
+                action = {f"joint_{i}.pos": float(current_joints[i]) for i in range(7)}
+                return action
+            
+            # Process VR wrist data through IK
+            arm_action = self.arm_ik_processor.process_wrist_data(
+                messages.wrist_data, 
+                current_joints
+            )
+            
+            # Convert action format from arm_joint_X.pos to joint_X.pos
+            action = {}
+            for i in range(7):
+                action[f"joint_{i}.pos"] = arm_action[f"arm_joint_{i}.pos"]
             
             # Store as last known good action
             self._last_action = action
@@ -281,9 +303,9 @@ class FrankaFERVRTeleoperator(Teleoperator):
         
         if self._is_connected:
             try:
-                vr_status = self.vr_bridge.get_vr_status()
+                vr_status = self.vr_router.get_status()
                 status.update(vr_status)
-                status["vr_ready"] = self.vr_bridge.is_ready()
+                status["vr_ready"] = vr_status.get("tcp_connected", False)
             except Exception as e:
                 logger.error(f"Failed to get VR status: {e}")
         
@@ -310,22 +332,6 @@ class FrankaFERVRTeleoperator(Teleoperator):
             current_obs = self._robot_reference.get_observation()
             current_joints = [current_obs[f"joint_{i}.pos"] for i in range(7)]
             
-            # Setup IK solver with current joint positions as neutral pose
-            success = self.vr_bridge.setup_ik_solver(
-                neutral_pose=current_joints,
-                manipulability_weight=self.config.manipulability_weight,
-                neutral_distance_weight=self.config.neutral_distance_weight,
-                current_distance_weight=self.config.current_distance_weight,
-                joint_weights=self.config.joint_weights
-            )
-            
-            if not success:
-                logger.error("Failed to setup IK solver")
-                return False
-            
-            # Set Q7 limits
-            self.vr_bridge.set_q7_limits(self.config.q7_min, self.config.q7_max)
-            
             # Get initial robot pose (end-effector transformation matrix)
             # Debug: Check what observation keys are available
             logger.info(f"Available observation keys: {list(current_obs.keys())}")
@@ -335,23 +341,37 @@ class FrankaFERVRTeleoperator(Teleoperator):
             if all(key in current_obs for key in ee_pose_keys):
                 ee_pose = [current_obs[key] for key in ee_pose_keys]
                 logger.info(f"Using robot ee_pose: {ee_pose[:4]} (first row)")
-                self.vr_bridge.set_initial_robot_pose(ee_pose)
+                initial_robot_pose = ee_pose
             elif "ee_pose" in current_obs:
                 # Fallback for other robots that might have a single ee_pose key
                 ee_pose = current_obs["ee_pose"]
                 if len(ee_pose) == 16:  # 4x4 transformation matrix
                     logger.info(f"Using robot ee_pose: {ee_pose[:4]} (first row)")
-                    self.vr_bridge.set_initial_robot_pose(ee_pose)
+                    initial_robot_pose = ee_pose
                 else:
                     logger.warning("End-effector pose format not recognized, using identity")
                     # Use identity transformation as fallback
-                    identity = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
-                    self.vr_bridge.set_initial_robot_pose(identity)
+                    initial_robot_pose = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
             else:
                 logger.warning("No end-effector pose in observation, using identity matrix!")
                 logger.warning("This will cause IK targets to be relative to [0,0,0] instead of robot position!")
-                identity = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
-                self.vr_bridge.set_initial_robot_pose(identity)
+                initial_robot_pose = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
+            
+            # Setup arm IK processor with current robot state
+            success = self.arm_ik_processor.setup(
+                neutral_pose=current_joints,
+                initial_robot_pose=initial_robot_pose,
+                manipulability_weight=self.config.manipulability_weight,
+                neutral_distance_weight=self.config.neutral_distance_weight,
+                current_distance_weight=self.config.current_distance_weight,
+                joint_weights=self.config.joint_weights,
+                q7_min=self.config.q7_min,
+                q7_max=self.config.q7_max
+            )
+            
+            if not success:
+                logger.error("Failed to setup arm IK processor")
+                return False
             
             self._initialized = True
             logger.info("IK solver initialized successfully")
