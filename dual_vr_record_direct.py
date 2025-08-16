@@ -8,6 +8,7 @@ the robot and teleoperator configurations.
 
 import argparse
 import logging
+import time
 from pathlib import Path
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -161,7 +162,7 @@ def main():
     logger.info(f"Robot observation features: {list(robot.observation_features.keys())}")
     
     # Set dataset path to save under lerobot/datasets/
-    dataset_path = Path("/home/zkweng/lerobot/datasets") / args.dataset_name
+    dataset_path = Path("/home/zkweng/lerobot") / args.dataset_name
     existing_episodes = 0
     
     if args.resume:
@@ -223,19 +224,32 @@ def main():
             
             print("2. Homing robot and hand...")
             # Home the robot arm
-            if hasattr(robot.arm, 'go_to_position') and hasattr(robot.arm.config, 'home_position'):
-                print("   - Homing arm...")
-                robot.arm.go_to_position(robot.arm.config.home_position)
+            if hasattr(robot.arm, 'reset_to_home'):
+                print("   - Sending arm to home position...")
+                success = robot.arm.reset_to_home()
+                if success:
+                    print("   - Arm homing initiated successfully")
+                else:
+                    print("   - WARNING: Arm homing failed!")
+                print("   - Waiting for arm to reach home position...")
+                time.sleep(3.0)  # Give arm time to reach home
+            else:
+                print("   - WARNING: Arm reset_to_home not available")
             
             # Home the hand
-            if hasattr(robot.hand, 'go_to_home_position'):
-                print("   - Homing hand...")
-                robot.hand.go_to_home_position()
-            elif hasattr(robot.hand, 'go_to_position'):
-                print("   - Homing hand...")
-                # Default open position for hand
-                home_position = [0.0] * 12  # 12 DOF for XHand
-                robot.hand.go_to_position(home_position)
+            if hasattr(robot.hand, 'reset_to_home'):
+                print("   - Sending hand to home position...")
+                success = robot.hand.reset_to_home()
+                if success:
+                    print("   - Hand homing initiated successfully")
+                else:
+                    print("   - WARNING: Hand homing failed!")
+                time.sleep(1.0)  # Give hand time to reach home
+            else:
+                print("   - WARNING: Hand reset_to_home not available")
+            
+            print("   - Waiting for robot to stabilize at home position...")
+            time.sleep(1.0)  # Extra safety pause
             
             print("3. Ready for episode")
             input(f"Press ENTER to start recording episode {current_episode} (or Ctrl+C to stop)...")
@@ -245,8 +259,21 @@ def main():
                 teleop.connect(calibrate=False)
                 teleop.set_robot(robot)
                 print("   - Waiting for VR stream to stabilize...")
-                import time
                 time.sleep(1.0)  # Give VR stream time to stabilize
+                
+                # Reset VR initial pose to current robot position
+                print("   - Resetting VR reference frame to current robot position...")
+                if hasattr(teleop, 'reset_initial_pose'):
+                    success = teleop.reset_initial_pose()
+                    if success:
+                        print("   - VR reference frame reset successfully")
+                    else:
+                        print("   - Warning: VR reference frame reset may have failed")
+                else:
+                    print("   - Warning: VR reference frame reset not available")
+                
+                print("   - VR teleoperation ready. Move headset to comfortable position before starting.")
+                time.sleep(1.0)  # Give operator time to position themselves
             
             log_say(f"Recording episode {current_episode} of {total_episodes_to_record}")
             
