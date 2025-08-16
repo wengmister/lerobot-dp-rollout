@@ -13,6 +13,8 @@ from typing import Dict, Any
 from lerobot.teleoperators.teleoperator import Teleoperator
 from .config_franka_fer_vr import FrankaFERVRTeleoperatorConfig
 
+import vr_message_router
+
 logger = logging.getLogger(__name__)
 
 
@@ -75,17 +77,7 @@ class FrankaFERVRTeleoperator(Teleoperator):
             except ImportError as e:
                 logger.warning(f"ADB setup not available: {e}. Manual adb reverse setup required.")
                 self._adb_setup_available = False
-        
-        # Import the VR message router and arm IK processor
-        try:
-            import vr_message_router
-            self.vr_router_module = vr_message_router
-        except ImportError as e:
-            raise ImportError(
-                "Failed to import vr_message_router module. "
-                "Please build the C++ extension first using: "
-                "cd franka_xhand_teleoperator && python setup.py build_ext --inplace"
-            ) from e
+    
         
         # Import arm IK processor
         from .arm_ik_processor import ArmIKProcessor
