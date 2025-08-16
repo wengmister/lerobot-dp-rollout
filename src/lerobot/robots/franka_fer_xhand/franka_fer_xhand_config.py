@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict
 
 from lerobot.cameras.utils import CameraConfig
@@ -12,8 +12,11 @@ class FrankaFERXHandConfig(RobotConfig):
     """Configuration for combined Franka FER arm + XHand robot"""
     
     # Sub-robot configurations
-    arm_config: FrankaFERConfig
-    hand_config: XHandConfig
+    arm_config: FrankaFERConfig = field(default_factory=lambda: FrankaFERConfig())
+    hand_config: XHandConfig = field(default_factory=lambda: XHandConfig())
+    
+    # Data collection cameras (empty for now)
+    cameras: Dict[str, CameraConfig] = field(default_factory=dict)
     
     # Combined robot settings
     synchronize_actions: bool = True  # Send arm and hand actions simultaneously

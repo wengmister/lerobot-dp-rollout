@@ -22,6 +22,7 @@ from .utils import make_teleoperator_from_config
 from . import (  # noqa: F401
     bi_so100_leader,
     franka_fer_vr,
+    franka_fer_xhand_vr,
     homunculus,
     koch_leader,
     so100_leader,

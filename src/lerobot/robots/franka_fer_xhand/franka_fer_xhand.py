@@ -3,6 +3,7 @@ import time
 from functools import cached_property
 from typing import Any, Dict
 
+from lerobot.cameras.utils import make_cameras_from_configs
 from lerobot.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 from lerobot.robots.franka_fer import FrankaFER
 from lerobot.robots.robot import Robot
@@ -34,23 +35,34 @@ class FrankaFERXHand(Robot):
         self.arm = FrankaFER(config.arm_config)
         self.hand = XHand(config.hand_config)
         
+        # Initialize cameras for data collection
+        self.cameras = make_cameras_from_configs(config.cameras)
+        
         # Track connection state
         self._is_connected = False
     
     @cached_property
     def observation_features(self) -> Dict[str, type]:
-        """Combined observation features from arm and hand"""
+        """Combined observation features from arm, hand, and cameras"""
         features = {}
         
         # Add arm features with 'arm_' prefix
         arm_features = self.arm.observation_features
         for key, value in arm_features.items():
-            features[f"arm_{key}"] = value
+            # Skip arm cameras since we use our own
+            if not key.startswith(('camera', 'cam')):
+                features[f"arm_{key}"] = value
         
         # Add hand features with 'hand_' prefix
         hand_features = self.hand.observation_features  
         for key, value in hand_features.items():
-            features[f"hand_{key}"] = value
+            # Skip hand cameras since we use our own
+            if not key.startswith(('camera', 'cam')):
+                features[f"hand_{key}"] = value
+        
+        # Add composite robot cameras
+        for cam_name, cam_config in self.config.cameras.items():
+            features[cam_name] = (cam_config.height, cam_config.width, 3)
         
         return features
     
@@ -92,6 +104,11 @@ class FrankaFERXHand(Robot):
             logger.info("Connecting XHand...")
             self.hand.connect(calibrate=calibrate)
             
+            # Connect cameras
+            logger.info("Connecting cameras...")
+            for cam in self.cameras.values():
+                cam.connect()
+            
             self._is_connected = True
             logger.info(f"{self} connected successfully")
             
@@ -103,6 +120,9 @@ class FrankaFERXHand(Robot):
                     self.arm.disconnect()
                 if self.hand.is_connected:
                     self.hand.disconnect()
+                for cam in self.cameras.values():
+                    if cam.is_connected:
+                        cam.disconnect()
             except:
                 pass
             raise ConnectionError(f"Failed to connect Franka FER + XHand: {e}")
@@ -145,7 +165,9 @@ class FrankaFERXHand(Robot):
         arm_time = time.perf_counter() - start
         
         for key, value in arm_obs.items():
-            obs_dict[f"arm_{key}"] = value
+            # Skip arm cameras since we use our own
+            if not key.startswith(('camera', 'cam')):
+                obs_dict[f"arm_{key}"] = value
         
         # Get hand observations with 'hand_' prefix
         start = time.perf_counter()
@@ -153,9 +175,17 @@ class FrankaFERXHand(Robot):
         hand_time = time.perf_counter() - start
         
         for key, value in hand_obs.items():
-            obs_dict[f"hand_{key}"] = value
+            # Skip hand cameras since we use our own
+            if not key.startswith(('camera', 'cam')):
+                obs_dict[f"hand_{key}"] = value
         
-        logger.debug(f"Arm obs: {arm_time*1000:.1f}ms, Hand obs: {hand_time*1000:.1f}ms")
+        # Get camera observations
+        start = time.perf_counter()
+        for cam_name, cam in self.cameras.items():
+            obs_dict[cam_name] = cam.get_image()
+        cam_time = time.perf_counter() - start
+        
+        logger.debug(f"Arm obs: {arm_time*1000:.1f}ms, Hand obs: {hand_time*1000:.1f}ms, Cameras: {cam_time*1000:.1f}ms")
         
         return obs_dict
     
@@ -241,6 +271,13 @@ class FrankaFERXHand(Robot):
         except Exception as e:
             logger.error(f"Failed to disconnect hand: {e}")
             hand_success = False
+        
+        # Disconnect cameras
+        try:
+            for cam in self.cameras.values():
+                cam.disconnect()
+        except Exception as e:
+            logger.error(f"Failed to disconnect cameras: {e}")
         
         self._is_connected = False
         
