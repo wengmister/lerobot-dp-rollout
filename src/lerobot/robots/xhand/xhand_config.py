@@ -19,7 +19,7 @@ class XHandConfig(RobotConfig):
     hand_id: int = 0  # Default hand ID
     
     # Control parameters (from examples) - XHand API expects integers
-    default_kp: int = 120  # Proportional gain
+    default_kp: int = 125  # Proportional gain
     default_ki: int = 0   # Integral gain  
     default_kd: int = 0   # Derivative gain
     default_tor_max: int = 250  # Maximum torque (mA) (limited at 400mA torque-current limit)

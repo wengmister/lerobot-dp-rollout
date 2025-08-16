@@ -46,6 +46,20 @@ class XHandVRTeleoperator(Teleoperator):
         super().__init__(config)
         self.config = config
         
+        # Import ADB setup utilities if needed
+        self._adb_setup_available = False
+        self._adb_setup_done = False
+        if config.setup_adb:
+            try:
+                from ..adb_setup import setup_adb_reverse, cleanup_adb_reverse
+                self.setup_adb_reverse = setup_adb_reverse
+                self.cleanup_adb_reverse = cleanup_adb_reverse
+                self._adb_setup_available = True
+                logger.info("ADB setup utilities loaded successfully")
+            except ImportError as e:
+                logger.warning(f"ADB setup not available: {e}. Manual adb reverse setup required.")
+                self._adb_setup_available = False
+        
         # Set default robot directory if not provided
         if config.robot_dir is None:
             robot_dir = Path(__file__).parent.parent.parent.parent.parent / "dex_retargeting" / "assets" / "robots" / "hands"
@@ -126,6 +140,18 @@ class XHandVRTeleoperator(Teleoperator):
         if self.detector is None:
             raise RuntimeError("VR hand detector not available")
         
+        # Setup adb port forwarding if requested and available
+        if self.config.setup_adb and self._adb_setup_available:
+            try:
+                success = self.setup_adb_reverse(self.config.vr_tcp_port)
+                if success:
+                    self._adb_setup_done = True
+                    logger.info(f"ADB reverse setup successful for port {self.config.vr_tcp_port}")
+                else:
+                    logger.warning("ADB reverse setup failed - make sure VR device can reach this machine")
+            except Exception as e:
+                logger.warning(f"Error during ADB setup: {e}")
+        
         self._is_connected = True
         logger.info("XHand VR teleoperator connected")
     
@@ -143,6 +169,15 @@ class XHandVRTeleoperator(Teleoperator):
     
     def disconnect(self) -> None:
         """Disconnect the teleoperator."""
+        # Cleanup adb reverse if we set it up
+        if self._adb_setup_done and self._adb_setup_available:
+            try:
+                self.cleanup_adb_reverse(self.config.vr_tcp_port)
+                logger.info("ADB reverse cleanup completed")
+            except Exception as e:
+                logger.warning(f"Error during ADB cleanup: {e}")
+            self._adb_setup_done = False
+        
         self._is_connected = False
         logger.info("XHand VR teleoperator disconnected")
     

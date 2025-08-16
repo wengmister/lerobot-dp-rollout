@@ -22,5 +22,6 @@ class XHandVRTeleoperatorConfig(TeleoperatorConfig):
     robot_dir: str | None = None
     
     # VR message router settings
-    vr_tcp_port: int = 8000  # TCP port for VR message router
+    vr_tcp_port: int = 8001  # TCP port for VR message router (8001 to avoid conflict with franka_fer_vr on 8000)
     vr_verbose: bool = False  # Enable verbose VR logging
+    setup_adb: bool = True  # Automatically setup adb reverse port forwarding using adb_setup.py

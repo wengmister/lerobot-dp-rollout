@@ -11,9 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-# Add original teleoperator path for IK solver
-franka_teleop_path = Path(__file__).parent.parent / "franka_teleoperator"
-sys.path.insert(0, str(franka_teleop_path))
+import weighted_ik_bridge
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +22,8 @@ class ArmIKProcessor:
     """
     
     def __init__(self, config=None):
-        """Initialize the arm IK processor"""
-        try:
-            # Import the lightweight C++ weighted IK solver
-            import weighted_ik_bridge
-            self.WeightedIKSolver = weighted_ik_bridge.WeightedIKSolver
-        except ImportError as e:
-            logger.error(f"Failed to import weighted_ik_bridge: {e}")
-            raise ImportError("weighted_ik_bridge module required for arm IK processing")
+        """Initialize the arm IK processor"""        
+        self.WeightedIKSolver = weighted_ik_bridge.WeightedIKSolver
         
         # Configuration
         self.config = config or {}

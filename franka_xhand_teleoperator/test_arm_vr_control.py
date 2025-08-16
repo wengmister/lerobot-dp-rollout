@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import vr_message_router
-from src.arm_ik_processor import ArmIKProcessor
+from lerobot.teleoperators.franka_fer_vr.arm_ik_processor import ArmIKProcessor
 from lerobot.robots.franka_fer.franka_fer import FrankaFER
 from lerobot.robots.franka_fer.franka_fer_config import FrankaFERConfig
 

@@ -26,16 +26,6 @@ from lerobot.teleoperators.xhand_vr.xhand_vr_teleoperator import XHandVRTeleoper
 from lerobot.teleoperators.xhand_vr.config_xhand_vr import XHandVRTeleoperatorConfig
 from dex_retargeting.constants import RobotName, RetargetingType, HandType
 
-# Import ADB setup utilities
-try:
-    from adb_setup import setup_adb_reverse, cleanup_adb_reverse
-except ImportError:
-    # Fallback if not available
-    def setup_adb_reverse(tcp_port=8000):
-        print(f"Warning: ADB setup not available. Make sure port {tcp_port} is accessible from your VR device.")
-        return False
-    def cleanup_adb_reverse(tcp_port=8000):
-        pass
 
 logging.basicConfig(
     level=logging.INFO,
@@ -101,7 +91,6 @@ def print_joint_visualization(action):
 
 
 def main():
-    adb_success = False  # Initialize at function scope
     parser = argparse.ArgumentParser(description="Test XHandVRTeleoperator (lerobot framework)")
     parser.add_argument(
         "--control-freq",
@@ -135,7 +124,7 @@ def main():
         "--vr-port",
         type=int,
         default=8000,
-        help="TCP port for VR communication (default: 8000)"
+        help="TCP port for VR communication (default: 8000, avoids conflict with franka_fer_vr on 8000)"
     )
     parser.add_argument(
         "--verbose",
@@ -148,14 +137,7 @@ def main():
     logger.info("="*80)
     logger.info("Testing XHandVRTeleoperator (lerobot teleoperator framework)")
     logger.info("="*80)
-    
-    # Setup ADB reverse for Meta Quest connection
-    logger.info("Setting up ADB reverse port forwarding...")
-    adb_success = setup_adb_reverse(tcp_port=args.vr_port)
-    if adb_success:
-        logger.info(f"ADB reverse setup successful for port {args.vr_port}")
-    else:
-        logger.warning("ADB setup failed - make sure your VR device can reach this machine")
+    logger.info("ADB setup is now handled automatically by the teleoperator")
     
     try:
         # Initialize XHand robot
@@ -238,8 +220,8 @@ def main():
             # Send action to robot
             robot.send_action(action)
             
-            # Get observation from robot (for logging)
-            observation = robot.get_observation()
+            # Get observation from robot (for logging, currently unused)
+            _ = robot.get_observation()
             
             # Visualization
             if args.stub or args.verbose:
@@ -280,10 +262,7 @@ def main():
         except Exception as e:
             logger.warning(f"Error during shutdown: {e}")
         
-        # Clean up ADB reverse
-        if adb_success:
-            logger.info("Cleaning up ADB reverse...")
-            cleanup_adb_reverse(tcp_port=args.vr_port)
+        # ADB cleanup is now handled automatically by teleoperator.disconnect()
     
     logger.info("Test completed successfully")
     return 0
