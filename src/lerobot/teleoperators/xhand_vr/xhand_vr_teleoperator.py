@@ -167,14 +167,15 @@ class XHandVRTeleoperator(Teleoperator):
             # Get VR landmarks data from shared manager
             landmarks_data, status = self.vr_manager.get_landmarks_data()
             
-            logger.info(f"VR status: {status}")
-            logger.info(f"Landmarks data: {landmarks_data is not None}")
-            if landmarks_data:
-                logger.info(f"Landmarks count: {len(landmarks_data.landmarks) if hasattr(landmarks_data, 'landmarks') else 'No landmarks attr'}")
-                if hasattr(landmarks_data, 'landmarks') and len(landmarks_data.landmarks) > 0:
-                    # Show a few landmark points for debugging
-                    logger.info(f"First landmark: {landmarks_data.landmarks[0]}")
-                    logger.info(f"Wrist landmark: {landmarks_data.landmarks[0] if len(landmarks_data.landmarks) > 0 else 'None'}")
+            if self.config.vr_verbose:
+                logger.debug(f"VR status: {status}")
+                logger.debug(f"Landmarks data: {landmarks_data is not None}")
+                if landmarks_data:
+                    logger.debug(f"Landmarks count: {len(landmarks_data.landmarks) if hasattr(landmarks_data, 'landmarks') else 'No landmarks attr'}")
+                    if hasattr(landmarks_data, 'landmarks') and len(landmarks_data.landmarks) > 0:
+                        # Show a few landmark points for debugging
+                        logger.debug(f"First landmark: {landmarks_data.landmarks[0]}")
+                        logger.debug(f"Wrist landmark: {landmarks_data.landmarks[0] if len(landmarks_data.landmarks) > 0 else 'None'}")
             
             if not status.get('tcp_connected', False) or landmarks_data is None:
                 # No valid VR data, return previous action or home position
@@ -185,7 +186,7 @@ class XHandVRTeleoperator(Teleoperator):
                 else:
                     # Return home position (open hand)
                     action = {f"joint_{i}.pos": 0.0 for i in range(12)}
-                    logger.info("No VR data - returning home position (all joints 0.0)")
+                    logger.debug("No VR data - returning home position (all joints 0.0)")
                     return action
             
             # Process landmarks data through detector
@@ -224,7 +225,8 @@ class XHandVRTeleoperator(Teleoperator):
             
             # Convert to XHand action format
             action = self._convert_to_xhand_action(xhand_joint_positions)
-            logger.info(f"Final hand action angles (degrees): {[f'{np.degrees(action[f"joint_{i}.pos"]):.1f}' for i in range(12)]}")
+            if self.config.vr_verbose:
+                logger.debug(f"Final hand action angles (degrees): {[f'{np.degrees(action[f"joint_{i}.pos"]):.1f}' for i in range(12)]}")
             return action
             
         except ValueError as e:

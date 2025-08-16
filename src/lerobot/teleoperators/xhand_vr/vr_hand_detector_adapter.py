@@ -6,9 +6,6 @@ as the original VRHandDetector, enabling seamless integration with existing reta
 """
 
 import logging
-import sys
-import time
-from pathlib import Path
 from typing import Optional, Tuple, Any
 import numpy as np
 
@@ -384,11 +381,12 @@ class VRHandDetectorAdapter:
             joint_pos = np.array(landmarks, dtype=np.float32)
             
             # DEBUG: Print raw VR input
-            print(f"🔍 RAW VR LANDMARKS INPUT:")
-            print(f"  Shape: {joint_pos.shape}")
-            print(f"  First 3 landmarks: {joint_pos[:3]}")
-            print(f"  Wrist (landmark 0): {joint_pos[0]}")
-            print(f"  Index tip (landmark 8): {joint_pos[8] if len(joint_pos) > 8 else 'N/A'}")
+            if self.verbose:
+                print(f"  RAW VR LANDMARKS INPUT:")
+                print(f"  Shape: {joint_pos.shape}")
+                print(f"  First 3 landmarks: {joint_pos[:3]}")
+                print(f"  Wrist (landmark 0): {joint_pos[0]}")
+                print(f"  Index tip (landmark 8): {joint_pos[8] if len(joint_pos) > 8 else 'N/A'}")
             
             # Apply the same processing logic as in detect() method
             # (Copy the landmark processing logic from detect() method)

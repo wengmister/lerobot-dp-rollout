@@ -22,7 +22,7 @@ from dex_retargeting.constants import RobotName, RetargetingType, HandType
 
 def test_dual_vr_teleoperator():
     """Test the dual VR teleoperator functionality with real robots."""
-    print("🎮 Testing Dual VR Teleoperator (FrankaFER + XHand) with Real Robots")
+    print("Testing Dual VR Teleoperator (FrankaFER + XHand) with Real Robots")
     print("=" * 70)
     
     robot = None
@@ -30,7 +30,7 @@ def test_dual_vr_teleoperator():
     
     try:
         # ===== SETUP REAL ROBOT =====
-        print("\n🤖 Setting up FrankaFER + XHand composite robot...")
+        print("\nSetting up FrankaFER + XHand composite robot...")
         
         robot_config = FrankaFERXHandConfig(
             arm_config=FrankaFERConfig(
@@ -45,11 +45,10 @@ def test_dual_vr_teleoperator():
         
         robot = FrankaFERXHand(robot_config)
         robot.connect(calibrate=True)
-        print("  ✅ Composite robot connected")
+        print("  Composite robot connected")
         
         # ===== SETUP DUAL VR TELEOPERATOR =====
-        # ===== SETUP DUAL VR TELEOPERATOR =====
-        print("\n🔧 Setting up dual VR teleoperator...")
+        print("\nSetting up dual VR teleoperator...")
         
         config = FrankaFERXHandVRTeleoperatorConfig(
             vr_tcp_port=8000,
@@ -69,32 +68,32 @@ def test_dual_vr_teleoperator():
         )
         
         teleop = FrankaFERXHandVRTeleoperator(config)
-        print("  ✅ Dual VR teleoperator created")
+        print("  Dual VR teleoperator created")
         
         # ===== CONNECT TELEOPERATOR =====
-        print("\n🔗 Connecting dual VR teleoperator...")
+        print("\nConnecting dual VR teleoperator...")
         teleop.connect(calibrate=False)
         teleop.set_robot(robot)  # Set robot reference for arm IK
-        print("  ✅ Dual VR teleoperator connected with robot reference")
+        print("  Dual VR teleoperator connected with robot reference")
         
         # ===== CHECK ACTION FEATURES =====
-        print("\n📋 Checking action features...")
+        print("\nChecking action features...")
         action_features = teleop.action_features
         
         arm_features = {k: v for k, v in action_features.items() if k.startswith('arm_')}
         hand_features = {k: v for k, v in action_features.items() if k.startswith('hand_')}
         
-        print(f"  🦾 Arm features ({len(arm_features)}):")
+        print(f"  Arm features ({len(arm_features)}):")
         for feature in sorted(arm_features.keys()):
             print(f"    - {feature}")
         
-        print(f"  ✋ Hand features ({len(hand_features)}):")
+        print(f"  Hand features ({len(hand_features)}):")
         for feature in sorted(hand_features.keys()):
             print(f"    - {feature}")
         
         
         # ===== CHECK CONNECTION STATUS =====
-        print("\n📊 Checking connection status...")
+        print("\nChecking connection status...")
         status = teleop.get_status()
         print(f"  Connected: {status.get('connected', False)}")
         
@@ -108,20 +107,20 @@ def test_dual_vr_teleoperator():
             print(f"  Hand Connected: {hand_status.get('connected', False)}")
         
         # ===== RESET TO HOME POSITION =====
-        print("\n🏠 Resetting robots to home position...")
+        print("\nResetting robots to home position...")
         home_success = robot.reset_to_home()
         if home_success:
-            print("  ✅ Both arm and hand reset to home position")
+            print("  Both arm and hand reset to home position")
         else:
-            print("  ⚠️  Warning: Home reset may have had issues")
+            print("  Warning: Home reset may have had issues")
         
         # Wait a moment for reset to complete
         time.sleep(2.0)
         
         # ===== TEST ACTION GENERATION =====
-        print("\n🎯 Testing VR control with robot movement...")
-        print("📱 Connect your VR device and move your hand to control both robots!")
-        print("⏹️  Press Ctrl+C to stop")
+        print("\nTesting VR control with robot movement...")
+        print("Connect your VR device and move your hand to control both robots!")
+        print("Press Ctrl+C to stop")
         
         frame_count = 0
         start_time = time.time()
@@ -145,9 +144,9 @@ def test_dual_vr_teleoperator():
                     elapsed = time.time() - start_time
                     actual_freq = frame_count / elapsed if elapsed > 0 else 0
                     
-                    print(f"📊 Frame {frame_count}: {actual_freq:.1f} Hz")
-                    print(f"  🦾 Arm actions: {len(arm_actions)} (sample: {list(arm_actions.keys())[:3]})")
-                    print(f"  ✋ Hand actions: {len(hand_actions)} (sample: {list(hand_actions.keys())[:3]})")
+                    print(f"Frame {frame_count}: {actual_freq:.1f} Hz")
+                    print(f"  Arm actions: {len(arm_actions)} (sample: {list(arm_actions.keys())[:3]})")
+                    print(f"  Hand actions: {len(hand_actions)} (sample: {list(hand_actions.keys())[:3]})")
                     
                     # Show sample values
                     if arm_actions:
@@ -171,37 +170,37 @@ def test_dual_vr_teleoperator():
                     time.sleep(sleep_time)
                     
             except Exception as e:
-                print(f"❌ Error in action generation: {e}")
+                print(f"Error in action generation: {e}")
                 break
                 
     except KeyboardInterrupt:
-        print("\n⏹️  Test stopped by user")
+        print("\nTest stopped by user")
         
     except Exception as e:
-        print(f"\n❌ Test failed: {e}")
+        print(f"\nTest failed: {e}")
         import traceback
         traceback.print_exc()
         return False
         
     finally:
         # ===== CLEANUP =====
-        print("\n🧹 Cleaning up...")
+        print("\nCleaning up...")
         
         if teleop:
             try:
                 teleop.disconnect()
-                print("  ✅ Dual VR teleoperator disconnected")
+                print("  Dual VR teleoperator disconnected")
             except Exception as e:
-                print(f"  ⚠️  Error disconnecting teleoperator: {e}")
+                print(f"  Error disconnecting teleoperator: {e}")
         
         if robot:
             try:
                 robot.disconnect()
-                print("  ✅ Composite robot disconnected")
+                print("  Composite robot disconnected")
             except Exception as e:
-                print(f"  ⚠️  Error disconnecting robot: {e}")
+                print(f"  Error disconnecting robot: {e}")
     
-    print("\n🎉 Dual VR teleoperator test completed!")
+    print("\nDual VR teleoperator test completed!")
     return True
 
 
