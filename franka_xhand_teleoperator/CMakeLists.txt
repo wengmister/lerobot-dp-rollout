@@ -27,7 +27,7 @@ target_compile_features(vr_message_router PRIVATE cxx_std_17)
 set_target_properties(vr_message_router PROPERTIES
     CXX_VISIBILITY_PRESET "hidden"
     VISIBILITY_INLINES_HIDDEN ON
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build"
 )
 
 # Weighted IK Bridge module
@@ -44,16 +44,4 @@ set_target_properties(weighted_ik_bridge PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 
-# VR IK Bridge module (if needed)
-pybind11_add_module(vr_ik_bridge 
-    src/vr_ik_bridge.cpp
-    ${COMMON_SOURCES}
-)
-
-target_compile_features(vr_ik_bridge PRIVATE cxx_std_17)
-target_link_libraries(vr_ik_bridge PRIVATE Eigen3::Eigen)
-set_target_properties(vr_ik_bridge PROPERTIES
-    CXX_VISIBILITY_PRESET "hidden"
-    VISIBILITY_INLINES_HIDDEN ON
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src"
-)
+# VR IK Bridge module removed - using vr_message_router instead

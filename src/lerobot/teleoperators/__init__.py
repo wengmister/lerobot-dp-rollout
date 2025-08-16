@@ -22,6 +22,7 @@ from .vr_teleoperator import VRTeleoperator, VRTeleoperatorConfig
 # Import teleoperator modules to trigger registration
 from . import (  # noqa: F401
     bi_so100_leader,
+    franka_fer_xhand_vr,
     homunculus,
     koch_leader,
     so100_leader,

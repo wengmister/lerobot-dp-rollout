@@ -18,7 +18,7 @@ def test_vr_arm_control():
     
     try:
         # Import components
-        import vr_message_router
+        import build.vr_message_router as vr_message_router
         from src.arm_ik_processor import ArmIKProcessor
         from lerobot.robots.franka_fer.franka_fer import FrankaFER
         from lerobot.robots.franka_fer.franka_fer_config import FrankaFERConfig
@@ -151,14 +151,6 @@ def test_vr_arm_control():
                         if not hasattr(test_vr_arm_control, 'first_vr_pos'):
                             test_vr_arm_control.first_vr_pos = wrist.position.copy()
                             print(f"  STORED first VR position: {test_vr_arm_control.first_vr_pos}")
-                        else:
-                            # Check if VR position has changed significantly
-                            pos_diff = [abs(wrist.position[i] - test_vr_arm_control.first_vr_pos[i]) for i in range(3)]
-                            max_pos_diff = max(pos_diff)
-                            if max_pos_diff > 0.05:  # 5cm change
-                                print(f"  VR MOVED! Diff from start: {pos_diff} (max: {max_pos_diff:.3f}m)")
-                            else:
-                                print(f"  VR barely moved: max diff = {max_pos_diff:.4f}m")
                     
                     elif status['tcp_connected']:
                         print("VR connected but no valid wrist data")

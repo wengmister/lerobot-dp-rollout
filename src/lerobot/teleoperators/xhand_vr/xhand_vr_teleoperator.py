@@ -67,11 +67,7 @@ class XHandVRTeleoperator(Teleoperator):
     @property
     def action_features(self) -> dict:
         """Action features for XHand robot (12 joint positions)."""
-        return {
-            "dtype": "float32",
-            "shape": (12,),
-            "names": [f"joint_{i}.pos" for i in range(12)]
-        }
+        return {f"joint_{i}.pos": float for i in range(12)}
     
     @property
     def feedback_features(self) -> dict:
