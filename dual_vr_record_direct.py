@@ -6,8 +6,8 @@ This script bypasses the CLI argument parsing issues and directly instantiates
 the robot and teleoperator configurations.
 """
 
+import argparse
 import logging
-import time
 from pathlib import Path
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -22,23 +22,58 @@ from lerobot.teleoperators.franka_fer_xhand_vr.config_franka_fer_xhand_vr import
 from lerobot.utils.control_utils import init_keyboard_listener
 from lerobot.utils.utils import init_logging, log_say
 from lerobot.utils.visualization_utils import _init_rerun
+from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
+from lerobot.cameras.configs import ColorMode
 
-# Recording parameters
-NUM_EPISODES = 1
-FPS = 30
-EPISODE_TIME_SEC = 10
-RESET_TIME_SEC = 5
-TASK_DESCRIPTION = "Teleoperate dual arm-hand system to manipulate objects"
-DATASET_NAME = "test_dual_vr_recording_2"
+# Default recording parameters
+DEFAULT_NUM_EPISODES = 2
+DEFAULT_FPS = 30
+DEFAULT_EPISODE_TIME_SEC = 20
+DEFAULT_TASK_DESCRIPTION = "Teleoperate dual arm-hand system to pick and place objects"
+DEFAULT_DATASET_NAME = "test_pick_and_place"
 
 # Initialize logging
 init_logging()
 logger = logging.getLogger(__name__)
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Record data with dual robot VR teleoperation")
+    parser.add_argument("--dataset-name", type=str, default=DEFAULT_DATASET_NAME,
+                       help=f"Name of the dataset (default: {DEFAULT_DATASET_NAME})")
+    parser.add_argument("--num-episodes", type=int, default=DEFAULT_NUM_EPISODES,
+                       help=f"Number of episodes to record (default: {DEFAULT_NUM_EPISODES})")
+    parser.add_argument("--episode-time", type=float, default=DEFAULT_EPISODE_TIME_SEC,
+                       help=f"Duration of each episode in seconds (default: {DEFAULT_EPISODE_TIME_SEC})")
+    parser.add_argument("--task", type=str, default=DEFAULT_TASK_DESCRIPTION,
+                       help=f"Task description (default: '{DEFAULT_TASK_DESCRIPTION}')")
+    parser.add_argument("--fps", type=int, default=DEFAULT_FPS,
+                       help=f"Recording frame rate (default: {DEFAULT_FPS})")
+    parser.add_argument("--resume", action="store_true",
+                       help="Resume recording from existing dataset")
+    return parser.parse_args()
+
+def get_existing_episode_count(dataset_path):
+    """Check how many episodes already exist in the dataset."""
+    try:
+        if Path(dataset_path).exists():
+            # Try to load existing dataset to count episodes
+            dataset = LeRobotDataset(dataset_path)
+            return len(dataset.episode_indices)
+        return 0
+    except Exception as e:
+        logger.warning(f"Could not check existing episodes: {e}")
+        return 0
+
 def main():
     """Main function to run the recording test."""
+    args = parse_args()
     
     logger.info("Setting up dual VR recording test...")
+    logger.info(f"Dataset: {args.dataset_name}")
+    logger.info(f"Episodes: {args.num_episodes}")
+    logger.info(f"Episode time: {args.episode_time}s")
+    logger.info(f"Task: {args.task}")
     
     # Create arm configuration
     arm_config = FrankaFERConfig(
@@ -60,11 +95,29 @@ def main():
         cameras={}  # Use composite robot cameras instead
     )
     
+    # Create camera configurations
+    cameras = {
+        "tpv": OpenCVCameraConfig(
+            index_or_path="/dev/video18",
+            fps=30,
+            width=320,
+            height=240,
+            color_mode=ColorMode.RGB
+        ),
+        "wrist": OpenCVCameraConfig(
+            index_or_path="/dev/video6",
+            fps=30,
+            width=424,
+            height=240,
+            color_mode=ColorMode.RGB
+        )
+    }
+    
     # Create composite robot configuration
     robot_config = FrankaFERXHandConfig(
         arm_config=arm_config,
         hand_config=hand_config,
-        cameras={},  # No cameras for this test
+        cameras=cameras,
         synchronize_actions=True,
         action_timeout=0.1,
         check_arm_hand_collision=True,
@@ -107,72 +160,107 @@ def main():
     logger.info(f"Robot action features: {list(robot.action_features.keys())}")
     logger.info(f"Robot observation features: {list(robot.observation_features.keys())}")
     
-    # Create the dataset (local for testing)
-    dataset = LeRobotDataset.create(
-        repo_id=f"local/{DATASET_NAME}",
-        fps=FPS,
-        features=dataset_features,
-        robot_type=robot.name,
-        use_videos=False,  # Disable videos for initial testing
-        image_writer_threads=4,
-    )
+    # Set dataset path to save under lerobot/datasets/
+    dataset_path = Path("/home/zkweng/lerobot/datasets") / args.dataset_name
+    existing_episodes = 0
+    
+    if args.resume:
+        # Check for existing dataset in lerobot/datasets/
+        existing_episodes = get_existing_episode_count(dataset_path)
+        if existing_episodes > 0:
+            logger.info(f"Found {existing_episodes} existing episodes. Resuming from episode {existing_episodes + 1}")
+        else:
+            logger.info("No existing episodes found. Starting from episode 1")
+    
+    # Create or load the dataset
+    if existing_episodes > 0:
+        dataset = LeRobotDataset(dataset_path)
+    else:
+        dataset = LeRobotDataset.create(
+            repo_id=str(dataset_path),
+            fps=args.fps,
+            features=dataset_features,
+            robot_type=robot.name,
+            use_videos=True,  # Enable videos for proper storage
+            image_writer_threads=4,
+        )
     
     try:
-        # Connect robot and teleoperator
+        # Connect robot first
         logger.info("Connecting robot...")
         robot.connect(calibrate=False)
         
-        logger.info("Connecting teleoperator...")
-        teleop.connect(calibrate=False)
-        
-        # Set robot reference in teleoperator
-        teleop.set_robot(robot)
-        
-        # Initialize visualization
+        # Initialize visualization early to avoid port conflicts with VR
         _init_rerun(session_name="dual_vr_record_test")
         
         # Initialize keyboard listener for control events
         listener, events = init_keyboard_listener()
         
-        # Verify connections
+        # Verify robot connection
         if not robot.is_connected:
             raise ValueError("Robot is not connected!")
-        if not teleop.is_connected:
-            raise ValueError("Teleoperator is not connected!")
+        
+        # Note: Teleoperator will be connected in the episode loop
         
         logger.info("Starting recording session...")
-        log_say(f"Recording {NUM_EPISODES} episodes")
+        total_episodes_to_record = args.num_episodes
+        log_say(f"Recording {total_episodes_to_record} episodes (starting from episode {existing_episodes + 1})")
         log_say("Press 's' to stop recording, 'r' to re-record current episode")
         
         # Recording loop
-        recorded_episodes = 0
-        while recorded_episodes < NUM_EPISODES and not events.get("stop_recording", False):
-            log_say(f"Recording episode {recorded_episodes + 1} of {NUM_EPISODES}")
+        recorded_episodes = existing_episodes
+        while recorded_episodes < total_episodes_to_record and not events.get("stop_recording", False):
+            current_episode = recorded_episodes + 1
+            
+            # Manual confirmation and homing before each episode
+            print(f"\n=== EPISODE {current_episode} PREPARATION ===")
+            
+            # Check teleoperation status (should be disconnected from previous episode)
+            print(f"1. Teleoperation status: {'connected' if teleop.is_connected else 'disconnected'}")
+            if teleop.is_connected:
+                print("   - Disconnecting teleoperation...")
+                teleop.disconnect()
+            
+            print("2. Homing robot and hand...")
+            # Home the robot arm
+            if hasattr(robot.arm, 'go_to_position') and hasattr(robot.arm.config, 'home_position'):
+                print("   - Homing arm...")
+                robot.arm.go_to_position(robot.arm.config.home_position)
+            
+            # Home the hand
+            if hasattr(robot.hand, 'go_to_home_position'):
+                print("   - Homing hand...")
+                robot.hand.go_to_home_position()
+            elif hasattr(robot.hand, 'go_to_position'):
+                print("   - Homing hand...")
+                # Default open position for hand
+                home_position = [0.0] * 12  # 12 DOF for XHand
+                robot.hand.go_to_position(home_position)
+            
+            print("3. Ready for episode")
+            input(f"Press ENTER to start recording episode {current_episode} (or Ctrl+C to stop)...")
+            
+            print("4. Connecting/reconnecting teleoperation...")
+            if not teleop.is_connected:
+                teleop.connect(calibrate=False)
+                teleop.set_robot(robot)
+                print("   - Waiting for VR stream to stabilize...")
+                import time
+                time.sleep(1.0)  # Give VR stream time to stabilize
+            
+            log_say(f"Recording episode {current_episode} of {total_episodes_to_record}")
             
             # Record the episode
             record_loop(
                 robot=robot,
                 events=events,
-                fps=FPS,
+                fps=args.fps,
                 dataset=dataset,
                 teleop=teleop,
-                control_time_s=EPISODE_TIME_SEC,
-                single_task=TASK_DESCRIPTION,
+                control_time_s=args.episode_time,
+                single_task=args.task,
                 display_data=True,
             )
-            
-            # Reset environment between episodes (except after last one)
-            if not events.get("stop_recording", False) and recorded_episodes < NUM_EPISODES - 1:
-                log_say("Reset the environment")
-                record_loop(
-                    robot=robot,
-                    events=events,
-                    fps=FPS,
-                    teleop=teleop,
-                    control_time_s=RESET_TIME_SEC,
-                    single_task=TASK_DESCRIPTION,
-                    display_data=True,
-                )
             
             # Handle re-recording if requested
             if events.get("rerecord_episode", False):
@@ -186,6 +274,15 @@ def main():
             dataset.save_episode()
             recorded_episodes += 1
             logger.info(f"Episode {recorded_episodes} saved successfully")
+            
+            # Disconnect teleoperator after each episode for proper cleanup
+            if teleop.is_connected:
+                teleop.disconnect()
+                print(f"Episode {recorded_episodes} complete - teleoperator disconnected")
+            
+            # Final completion message
+            if recorded_episodes >= total_episodes_to_record:
+                print(f"\n=== ALL {total_episodes_to_record} EPISODES COMPLETED! ===")
             
     except KeyboardInterrupt:
         logger.info("Recording interrupted by user")
@@ -219,7 +316,10 @@ def main():
             logger.error(f"Error stopping keyboard listener: {e}")
         
         logger.info("Recording session complete!")
-        logger.info(f"Recorded {recorded_episodes} episodes")
+        try:
+            logger.info(f"Recorded {recorded_episodes} episodes")
+        except NameError:
+            logger.info("Recording session ended before completion")
         logger.info(f"Dataset saved to: {dataset.root}")
 
 

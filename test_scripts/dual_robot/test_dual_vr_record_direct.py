@@ -29,7 +29,7 @@ FPS = 30
 EPISODE_TIME_SEC = 10
 RESET_TIME_SEC = 5
 TASK_DESCRIPTION = "Teleoperate dual arm-hand system to manipulate objects"
-DATASET_NAME = "test_dual_vr_recording_2"
+DATASET_NAME = "test_dual_vr_recording_5"
 ROBOT_IP = "192.168.18.1"  # Update with your robot IP
 
 # Initialize logging
