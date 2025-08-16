@@ -104,7 +104,7 @@ class FrankaFERVRTeleoperator(Teleoperator):
         vr_config = VRRouterConfig(
             tcp_port=self.config.tcp_port,
             verbose=self.config.verbose,
-            message_timeout_ms=200.0,
+            message_timeout_ms=1000.0,  # Increased to handle VR app periodic delays
             setup_adb=self.config.setup_adb
         )
         
