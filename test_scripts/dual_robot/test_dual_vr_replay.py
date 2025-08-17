@@ -8,6 +8,8 @@ allowing you to see the recorded manipulation behaviors.
 
 import logging
 import time
+import sys
+import argparse
 from pathlib import Path
 import torch
 
@@ -20,20 +22,19 @@ from lerobot.utils.utils import init_logging, log_say
 from lerobot.utils.visualization_utils import _init_rerun
 from lerobot.utils.control_utils import init_keyboard_listener
 
-# Replay parameters
-DATASET_NAME = "test_dual_vr_recording_2"  # Update with your dataset name
-ROBOT_IP = "192.168.18.1"
-EPISODE_TO_REPLAY = 0  # Which episode to replay (0-indexed)
-REPLAY_SPEED = 1.0  # Speed multiplier (1.0 = original speed, 0.5 = half speed)
-CONFIRM_BEFORE_START = True  # Require user confirmation before starting
+# Default replay parameters
+DEFAULT_ROBOT_IP = "192.168.18.1"
+DEFAULT_EPISODE = 0
+DEFAULT_REPLAY_SPEED = 1.0
+DEFAULT_CONFIRM = True
 
 # Initialize logging
 init_logging()
 logger = logging.getLogger(__name__)
 
-def load_dataset(dataset_name: str) -> LeRobotDataset:
+def load_dataset(dataset_path: str) -> LeRobotDataset:
     """Load the recorded dataset."""
-    dataset_path = Path("/home/zkweng/.cache/huggingface/lerobot/local") / dataset_name
+    dataset_path = Path(dataset_path)
 
     if not dataset_path.exists():
         raise FileNotFoundError(f"Dataset not found. Looking for: {dataset_path}")
@@ -107,11 +108,11 @@ def get_episode_actions(dataset: LeRobotDataset, episode_idx: int) -> list:
     
     return actions
 
-def setup_robot() -> FrankaFERXHand:
+def setup_robot(robot_ip: str) -> FrankaFERXHand:
     """Set up the composite robot for replay."""
     # Create arm configuration
     arm_config = FrankaFERConfig(
-        server_ip=ROBOT_IP,
+        server_ip=robot_ip,
         server_port=5000,
         home_position=[0, -0.785, 0, -2.356, 0, 1.571, -0.9],
         max_relative_target=None,
@@ -185,35 +186,55 @@ def replay_episode(robot: FrankaFERXHand, actions: list, fps: float, speed_multi
     total_time = time.perf_counter() - start_time
     log_say(f"Replay complete! Total time: {total_time:.1f}s")
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Replay recorded dual robot dataset")
+    parser.add_argument("dataset_path", help="Path to the dataset directory")
+    parser.add_argument("--episode", type=int, default=DEFAULT_EPISODE, 
+                       help=f"Episode to replay (default: {DEFAULT_EPISODE})")
+    parser.add_argument("--speed", type=float, default=DEFAULT_REPLAY_SPEED,
+                       help=f"Replay speed multiplier (default: {DEFAULT_REPLAY_SPEED})")
+    parser.add_argument("--robot-ip", default=DEFAULT_ROBOT_IP,
+                       help=f"Robot IP address (default: {DEFAULT_ROBOT_IP})")
+    parser.add_argument("--no-confirm", action="store_true",
+                       help="Skip confirmation before starting replay")
+    return parser.parse_args()
+
 def main():
     """Main replay function."""
+    args = parse_args()
+    
     logger.info("Setting up dual robot replay...")
+    logger.info(f"Dataset path: {args.dataset_path}")
+    logger.info(f"Episode: {args.episode}")
+    logger.info(f"Speed: {args.speed}")
+    logger.info(f"Robot IP: {args.robot_ip}")
     
     try:
         # Load dataset
-        logger.info(f"Loading dataset: {DATASET_NAME}")
-        dataset = load_dataset(DATASET_NAME)
+        logger.info(f"Loading dataset from: {args.dataset_path}")
+        dataset = load_dataset(args.dataset_path)
         
         logger.info(f"Dataset loaded. Episodes: {dataset.num_episodes}, Total frames: {len(dataset)}")
         logger.info(f"FPS: {dataset.fps}")
         
         # Check episode exists
-        if EPISODE_TO_REPLAY >= dataset.num_episodes:
-            raise ValueError(f"Episode {EPISODE_TO_REPLAY} not found. Dataset has {dataset.num_episodes} episodes.")
+        if args.episode >= dataset.num_episodes:
+            raise ValueError(f"Episode {args.episode} not found. Dataset has {dataset.num_episodes} episodes.")
         
         # Extract actions from episode
-        logger.info(f"Extracting actions from episode {EPISODE_TO_REPLAY}")
-        actions = get_episode_actions(dataset, EPISODE_TO_REPLAY)
+        logger.info(f"Extracting actions from episode {args.episode}")
+        actions = get_episode_actions(dataset, args.episode)
         
         if not actions:
-            raise ValueError(f"No actions found in episode {EPISODE_TO_REPLAY}")
+            raise ValueError(f"No actions found in episode {args.episode}")
         
         logger.info(f"Extracted {len(actions)} actions")
         logger.info(f"Action keys: {list(actions[0].keys()) if actions else 'None'}")
         
         # Set up robot
         logger.info("Setting up robot...")
-        robot = setup_robot()
+        robot = setup_robot(args.robot_ip)
         
         # Connect robot
         logger.info("Connecting to robot...")
@@ -231,12 +252,12 @@ def main():
         listener, events = init_keyboard_listener()
         
         # Confirmation before starting
-        if CONFIRM_BEFORE_START:
+        if not args.no_confirm:
             log_say("Ready to replay. Starting in 5 seconds (Ctrl+C to cancel)...")
             time.sleep(5)
         
         # Replay the episode
-        replay_episode(robot, actions, dataset.fps, REPLAY_SPEED)
+        replay_episode(robot, actions, dataset.fps, args.speed)
         
     except KeyboardInterrupt:
         logger.info("Replay cancelled by user")
