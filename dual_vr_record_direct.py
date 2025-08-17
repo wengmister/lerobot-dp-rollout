@@ -27,11 +27,11 @@ from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 from lerobot.cameras.configs import ColorMode
 
 # Default recording parameters
-DEFAULT_NUM_EPISODES = 100
+DEFAULT_NUM_EPISODES = 1
 DEFAULT_FPS = 30
 DEFAULT_EPISODE_TIME_SEC = 30
 DEFAULT_TASK_DESCRIPTION = "Teleoperate dual arm-hand system to pick and place objects"
-DEFAULT_DATASET_NAME = "orange_cube_pick_and_place"
+DEFAULT_DATASET_NAME = "orange_cube_pick_and_place_with_force"
 
 # Initialize logging
 init_logging()
@@ -112,16 +112,23 @@ def main():
     # Create camera configurations
     cameras = {
         "tpv": OpenCVCameraConfig(
-            index_or_path="/dev/video18",
+            index_or_path="/dev/video11",
             fps=30,
             width=320,
             height=240,
             color_mode=ColorMode.RGB
         ),
         "wrist": OpenCVCameraConfig(
-            index_or_path="/dev/video4",
+            index_or_path="/dev/video6",
             fps=30,
             width=424,
+            height=240,
+            color_mode=ColorMode.RGB
+        ),
+        "overhead": OpenCVCameraConfig(
+            index_or_path="/dev/video21",
+            fps=30,
+            width=320,
             height=240,
             color_mode=ColorMode.RGB
         )

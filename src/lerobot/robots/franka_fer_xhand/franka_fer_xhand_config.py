@@ -12,9 +12,9 @@ from lerobot.robots.xhand.xhand_config import XHandConfig
 class FrankaFERXHandConfig(RobotConfig):
     """Configuration for combined Franka FER arm + XHand robot"""
     
-    # Sub-robot configurations
-    arm_config: FrankaFERConfig = field(default_factory=lambda: FrankaFERConfig())
-    hand_config: XHandConfig = field(default_factory=lambda: XHandConfig())
+    # Sub-robot configurations (with empty cameras to avoid circular imports)
+    arm_config: FrankaFERConfig = field(default_factory=lambda: FrankaFERConfig(cameras={}))
+    hand_config: XHandConfig = field(default_factory=lambda: XHandConfig(cameras={}))
     
     # Data collection cameras (empty for now)
     cameras: Dict[str, CameraConfig] = field(default_factory=dict)

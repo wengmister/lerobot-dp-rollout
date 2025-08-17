@@ -53,9 +53,9 @@ class XHand(Robot):
         for joint_name in self.joint_names:
             features[f"{joint_name}.pos"] = float
             
-        # Joint torques (12 joints)
+        # Joint torques (12 joints) - actually current in mA, stored as float
         for joint_name in self.joint_names:
-            features[f"{joint_name}.torque"] = int
+            features[f"{joint_name}.torque"] = float
         
         # Add camera features if any
         for cam_name, cam_config in self.config.cameras.items():
@@ -203,7 +203,7 @@ class XHand(Robot):
             # Add joint positions
             for i, joint_name in enumerate(self.joint_names):
                 obs_dict[f"{joint_name}.pos"] = float(joint_states["positions"][i])
-                obs_dict[f"{joint_name}.torque"] = int(joint_states["torques"][i])
+                obs_dict[f"{joint_name}.torque"] = float(joint_states["torques"][i])  # Convert to float (mA)
         
         # Capture images from cameras
         for cam_key, cam in self.cameras.items():
@@ -219,7 +219,7 @@ class XHand(Robot):
         if self._device is None:
             # Stub mode - return dummy data
             positions = np.zeros(12)  # All joints at 0 position
-            torques = np.zeros(12, dtype=int)  # All torques at 0 (mNm)
+            torques = np.zeros(12, dtype=int)  # All torques at 0 (mA - actually current)
             return {"positions": positions, "torques": torques}
         
         try:
@@ -246,7 +246,7 @@ class XHand(Robot):
             for i in range(12):
                 finger_state = state.finger_state[i]
                 positions[i] = finger_state.position  # Already in radians
-                torques[i] = int(finger_state.torque)  # Keep in mNm as integer
+                torques[i] = int(finger_state.torque)  # Actually current in mA (misnamed in SDK)
             
             return {
                 "positions": positions,
