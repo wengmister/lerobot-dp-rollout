@@ -121,7 +121,7 @@ def main():
         "wrist": OpenCVCameraConfig(
             index_or_path="/dev/video6",
             fps=30,
-            width=424,
+            width=320,
             height=240,
             color_mode=ColorMode.RGB
         ),
