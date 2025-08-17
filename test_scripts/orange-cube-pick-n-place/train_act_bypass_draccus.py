@@ -59,7 +59,7 @@ def main():
         dataset=dataset_config,
         env=None,  # No environment for offline training
         policy=policy_config,
-        output_dir=Path("./outputs/act_policy_orange_cube_bypass"),
+        output_dir=Path("./outputs/policy/act_policy_orange_cube_bypass"),
         job_name="act_orange_cube_bypass",
         batch_size=16,
         steps=100000,  # Start with fewer steps for testing
