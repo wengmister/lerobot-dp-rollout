@@ -177,3 +177,5 @@ outputs/
 # example data dir
 
 .claude
+
+/datasets
