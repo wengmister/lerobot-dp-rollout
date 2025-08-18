@@ -2,7 +2,7 @@
 import sys
 import os
 from pathlib import Path
-from lerobot.datasets import LeRobotDataset
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 def push_dataset(dataset_name: str, username: str = "wengmister"):
     """Push a dataset to Hugging Face Hub with auto-generated paths."""

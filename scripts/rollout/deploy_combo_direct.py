@@ -21,6 +21,7 @@ from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 from lerobot.cameras.configs import ColorMode
 from lerobot.policies.act.modeling_act import ACTPolicy
 from lerobot.policies.act.configuration_act import ACTConfig
+from lerobot.configs.types import PolicyFeature, FeatureType, NormalizationMode
 
 def main():
     print("=== Combo Robot Policy Deployment ===")
@@ -29,8 +30,6 @@ def main():
     ACTION_SCALE = 1.0  # Scale actions (< 1.0 for safer/slower movements)
     SMOOTHING_ALPHA = 0.3  # 0.0 = max smoothing, 1.0 = no smoothing
     QUERY_FREQUENCY = 3  # Query new action chunk every N steps (1-8)
-    GRASP_ASSIST = True  # Help with grasping based on arm position
-    GRASP_Z_THRESHOLD = 0.2  # Z height below which to attempt grasp (meters)
     
     # Create robot configuration
     arm_config = FrankaFERConfig(
@@ -81,27 +80,76 @@ def main():
     robot = FrankaFERXHand(robot_config)
     
     # Load policy
-    policy_path = Path("outputs/act_vision_orange_cube")
+    policy_path = Path("outputs/act_policy_orange_cube_bypass/checkpoints")
     print(f"Loading policy from {policy_path}")
     
-    # Load the checkpoint
-    checkpoint_path = policy_path / "checkpoint_10000.pth"
-    if not checkpoint_path.exists():
-        # Try other checkpoints
-        checkpoints = sorted(list(policy_path.glob("checkpoint_*.pth")))
-        if checkpoints:
-            checkpoint_path = checkpoints[-1]
-            print(f"Using checkpoint: {checkpoint_path}")
-        else:
-            print("No checkpoint found!")
-            return 1
+    # Find the latest checkpoint directory
+    checkpoint_dirs = sorted([d for d in policy_path.iterdir() if d.is_dir() and d.name.isdigit()])
+    if not checkpoint_dirs:
+        print("No checkpoint directories found!")
+        return 1
     
-    # Load checkpoint with weights_only=False (we trust our own trained model)
-    checkpoint = torch.load(checkpoint_path, map_location="cuda", weights_only=False)
-    config = checkpoint["config"]
+    latest_checkpoint_dir = checkpoint_dirs[-1]
+    print(f"Using checkpoint: {latest_checkpoint_dir}")
+    
+    # Load config
+    config_path = latest_checkpoint_dir / "pretrained_model" / "config.json"
+    with open(config_path) as f:
+        import json
+        config_dict = json.load(f)
+    
+    # Convert input_features and output_features to PolicyFeature objects
+    input_features = {}
+    for key, value in config_dict.get('input_features', {}).items():
+        input_features[key] = PolicyFeature(
+            type=FeatureType[value['type']],
+            shape=tuple(value['shape'])
+        )
+    
+    output_features = {}
+    for key, value in config_dict.get('output_features', {}).items():
+        output_features[key] = PolicyFeature(
+            type=FeatureType[value['type']],
+            shape=tuple(value['shape'])
+        )
+    
+    # Convert normalization_mapping strings to NormalizationMode enums
+    normalization_mapping = {}
+    for key, value in config_dict.get('normalization_mapping', {}).items():
+        normalization_mapping[key] = NormalizationMode[value]
+    
+    # Create ACTConfig with only the fields it expects
+    config = ACTConfig(
+        n_obs_steps=config_dict.get('n_obs_steps', 1),
+        normalization_mapping=normalization_mapping,
+        input_features=input_features,
+        output_features=output_features,
+        device=config_dict.get('device', 'cuda'),
+        chunk_size=config_dict.get('chunk_size', 8),
+        n_action_steps=config_dict.get('n_action_steps', 8),
+        vision_backbone=config_dict.get('vision_backbone', 'resnet18'),
+        pretrained_backbone_weights=config_dict.get('pretrained_backbone_weights'),
+        replace_final_stride_with_dilation=config_dict.get('replace_final_stride_with_dilation', False),
+        pre_norm=config_dict.get('pre_norm', False),
+        dim_model=config_dict.get('dim_model', 512),
+        n_heads=config_dict.get('n_heads', 8),
+        dim_feedforward=config_dict.get('dim_feedforward', 3200),
+        feedforward_activation=config_dict.get('feedforward_activation', 'relu'),
+        n_encoder_layers=config_dict.get('n_encoder_layers', 4),
+        n_decoder_layers=config_dict.get('n_decoder_layers', 1),
+        use_vae=config_dict.get('use_vae', True),
+        latent_dim=config_dict.get('latent_dim', 32),
+        n_vae_encoder_layers=config_dict.get('n_vae_encoder_layers', 4),
+        temporal_ensemble_coeff=config_dict.get('temporal_ensemble_coeff'),
+        dropout=config_dict.get('dropout', 0.1),
+        kl_weight=config_dict.get('kl_weight', 10.0)
+    )
     
     # Try to load actual stats from dataset if available
     stats_path = policy_path / "stats.json"
+    if not stats_path.exists():
+        # Try parent directory
+        stats_path = policy_path.parent / "stats.json"
     if stats_path.exists():
         import json
         with open(stats_path) as f:
@@ -128,12 +176,12 @@ def main():
                 "std": torch.ones(42)
             },
             "observation.images.tpv": {
-                "mean": torch.zeros(3, 1, 1),
-                "std": torch.ones(3, 1, 1)
+                "mean": torch.zeros(3, 240, 320),
+                "std": torch.ones(3, 240, 320)
             },
             "observation.images.wrist": {
-                "mean": torch.zeros(3, 1, 1),
-                "std": torch.ones(3, 1, 1)
+                "mean": torch.zeros(3, 240, 424),
+                "std": torch.ones(3, 240, 424)
             },
             "action": {
                 "mean": torch.zeros(19),
@@ -142,7 +190,12 @@ def main():
         }
     
     policy = ACTPolicy(config, dataset_stats=stats)
-    policy.load_state_dict(checkpoint["model_state_dict"])
+    
+    # Load model weights from safetensors
+    model_path = latest_checkpoint_dir / "pretrained_model" / "model.safetensors"
+    from safetensors.torch import load_file
+    state_dict = load_file(model_path)
+    policy.load_state_dict(state_dict)
     policy.eval()
     policy.to("cuda")
     
@@ -226,10 +279,10 @@ def main():
                 tpv_image = torch.FloatTensor(obs["tpv"]).permute(2, 0, 1).unsqueeze(0).cuda() / 255.0  # Normalize to [0,1]
                 wrist_image = torch.FloatTensor(obs["wrist"]).permute(2, 0, 1).unsqueeze(0).cuda() / 255.0  # Normalize to [0,1]
                 
-                # Resize images to match expected input size (64x64)
+                # Resize images to match expected input size (320x240 for tpv, 424x240 for wrist)
                 import torch.nn.functional as F
-                tpv_image = F.interpolate(tpv_image, size=(64, 64), mode='bilinear', align_corners=False)
-                wrist_image = F.interpolate(wrist_image, size=(64, 64), mode='bilinear', align_corners=False)
+                tpv_image = F.interpolate(tpv_image, size=(240, 320), mode='bilinear', align_corners=False)
+                wrist_image = F.interpolate(wrist_image, size=(240, 424), mode='bilinear', align_corners=False)
                 
                 batch = {
                     "observation.state": env_state_tensor,  # Needed for device check
